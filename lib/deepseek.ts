@@ -1,37 +1,59 @@
 // lib/deepseek.ts
-// DeepSeek API is OpenAI-compatible: POST /chat/completions with model deepseek-chat / deepseek-reasoner. :contentReference[oaicite:0]{index=0}
-
 export type DeepSeekRole = "system" | "user" | "assistant";
-export type DeepSeekMessage = { role: DeepSeekRole; content: string };
 
-type DeepSeekChatCompletionResponse = {
-    choices?: Array<{ message?: { content?: string | null } | null }>;
+export type DeepSeekMessage = {
+    role: DeepSeekRole;
+    content: string;
+};
+
+type ChatCompletionChoice = {
+    message?: {
+        role?: string;
+        content?: string;
+    };
+};
+
+type ChatCompletionResponse = {
+    choices?: ChatCompletionChoice[];
     error?: { message?: string };
 };
 
-function env(name: string): string {
+type DeepSeekChatOptions = {
+    model?: string;
+    temperature?: number;
+    max_tokens?: number;
+};
+
+function getEnv(name: string): string {
     const v = process.env[name];
     if (!v) throw new Error(`Missing env: ${name}`);
     return v;
 }
 
-function normalizeBaseUrl(raw: string): string {
-    return raw.replace(/\/+$/, "");
+function normalizeMessages(
+    input: string | DeepSeekMessage[],
+): DeepSeekMessage[] {
+    if (typeof input === "string") {
+        return [{ role: "user", content: input }];
+    }
+    return input;
 }
 
-async function deepseekRequest(opts: {
-    messages: DeepSeekMessage[];
-    json?: boolean;
-    temperature?: number;
-    max_tokens?: number;
-}) {
-    const baseUrl = normalizeBaseUrl(
-        process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
-    );
-    const apiKey = env("DEEPSEEK_API_KEY");
-    const model = process.env.DEEPSEEK_MODEL ?? "deepseek-chat";
+/**
+ * Универсальный чат: принимает либо string, либо messages[]
+ * Возвращает текст ответа модели.
+ */
+export async function deepseekChat(
+    input: string | DeepSeekMessage[],
+    opts: DeepSeekChatOptions = {},
+): Promise<string> {
+    const apiKey = getEnv("DEEPSEEK_API_KEY");
+    const baseUrl = process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com";
+    const model = opts.model ?? (process.env.DEEPSEEK_MODEL ?? "deepseek-chat");
 
-    const res = await fetch(`${baseUrl}/chat/completions`, {
+    const messages = normalizeMessages(input);
+
+    const r = await fetch(`${baseUrl}/v1/chat/completions`, {
         method: "POST",
         headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -39,89 +61,52 @@ async function deepseekRequest(opts: {
         },
         body: JSON.stringify({
             model,
-            messages: opts.messages,
-            temperature: opts.temperature ?? (opts.json ? 0.2 : 0.7),
-            max_tokens: opts.max_tokens ?? 900,
-            // JSON Output mode: response_format.type = "json_object". :contentReference[oaicite:1]{index=1}
-            response_format: opts.json ? { type: "json_object" } : { type: "text" },
+            messages,
+            temperature: opts.temperature ?? 0.2,
+            max_tokens: opts.max_tokens ?? 800,
         }),
     });
 
-    const data = (await res.json().catch(() => null)) as
-        | DeepSeekChatCompletionResponse
-        | null;
-
-    if (!res.ok) {
-        const msg =
-            data?.error?.message ||
-            `DeepSeek error: HTTP ${res.status} ${res.statusText}`;
-        throw new Error(msg);
+    if (!r.ok) {
+        const text = await r.text().catch(() => "");
+        throw new Error(`DeepSeek HTTP ${r.status}: ${text || r.statusText}`);
     }
-    if (!data?.choices?.[0]?.message?.content) {
-        throw new Error("DeepSeek returned empty content");
+
+    const data = (await r.json()) as ChatCompletionResponse;
+
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) {
+        const errMsg = data.error?.message ?? "No model content";
+        throw new Error(errMsg);
     }
-    return data.choices[0].message.content;
+
+    return content.trim();
 }
 
-function stripCodeFences(s: string): string {
-    const t = s.trim();
-    if (t.startsWith("```")) {
-        return t.replace(/^```[a-zA-Z]*\n?/, "").replace(/```$/, "").trim();
-    }
-    return t;
-}
-
-// If model still returns extra text, try to extract the first JSON object.
-function extractJsonObject(s: string): string {
-    const t = stripCodeFences(s);
-    const first = t.indexOf("{");
-    const last = t.lastIndexOf("}");
-    if (first >= 0 && last > first) return t.slice(first, last + 1);
-    return t;
-}
-
-export async function deepseekChat(
-    prompt: string,
-    system?: string,
-): Promise<string> {
-    const messages: DeepSeekMessage[] = [];
-    if (system) messages.push({ role: "system", content: system });
-    messages.push({ role: "user", content: prompt });
-    return deepseekRequest({ messages, json: false });
-}
-
-// удобный алиас (у тебя TS уже подсказывал deepseek)
-export const deepseek = deepseekChat;
-
+/**
+ * Если хочешь получать именно JSON — удобный хелпер.
+ * Он попросит модель вернуть чистый JSON и распарсит его.
+ */
 export async function deepseekJson<T>(
-    prompt: string,
-    schemaHint?: string,
-    system?: string,
+    messages: DeepSeekMessage[],
+    opts: DeepSeekChatOptions = {},
 ): Promise<T> {
-    const sys =
-        system ??
-        "Отвечай СТРОГО на русском языке. Верни ТОЛЬКО валидный JSON. Без markdown. Без лишнего текста.";
+    const jsonHint: DeepSeekMessage = {
+        role: "system",
+        content:
+            "Ответь СТРОГО валидным JSON без markdown, без пояснений и без текста вокруг.",
+    };
 
-    const hint = schemaHint
-        ? `\n\nJSON schema/shape (follow exactly):\n${schemaHint}\n`
-        : "";
-
-    const content = await deepseekRequest({
-        messages: [
-            { role: "system", content: sys + hint },
-            { role: "user", content: prompt },
-        ],
-        json: true,
-        temperature: 0.2,
-        max_tokens: 1200,
+    const content = await deepseekChat([jsonHint, ...messages], {
+        ...opts,
+        temperature: opts.temperature ?? 0,
     });
 
-    const jsonText = extractJsonObject(content);
     try {
-        return JSON.parse(jsonText) as T;
-    } catch (e) {
+        return JSON.parse(content) as T;
+    } catch {
         throw new Error(
-            `Failed to parse JSON from DeepSeek. Raw:\n${content}\n---\nExtracted:\n${jsonText}`,
+            `Model did not return valid JSON. Got: ${content.slice(0, 400)}`,
         );
     }
 }
