@@ -8,7 +8,6 @@ import {
   DishCategory,
   DishTag,
   Ingredient,
-  IngredientBasis,
   Macros,
   saveDishesToStorage,
   loadDishesFromStorage,
@@ -25,32 +24,64 @@ const ALL_TAGS: { value: DishTag; label: string }[] = [
   { value: "diabetic_friendly", label: "Подходит при СД" },
 ];
 
-type MacroKey = keyof Pick<Macros, "calories" | "protein" | "fat" | "carbs" | "fiber">;
+type MacrosApiOut = {
+  macros?: {
+    calories?: number | null;
+    protein?: number | null;
+    fat?: number | null;
+    carbs?: number | null;
+    fiber?: number | null;
+  };
+  comment?: string;
+};
 
-type AiMacros = Partial<Pick<Macros, "calories" | "protein" | "fat" | "carbs" | "fiber">>;
-type AiResponse = { macros?: AiMacros; comment?: string; notes?: string; error?: string };
+type AutofillOut = {
+  title?: string;
+  category?: DishCategory;
+  timeMinutes?: number;
+  ingredients?: Array<{ name: string; amount?: string }>;
+  instructions?: string;
+  notes?: string;
+  // опционально может вернуть сразу и макросы
+  macros?: {
+    calories?: number | null;
+    protein?: number | null;
+    fat?: number | null;
+    carbs?: number | null;
+    fiber?: number | null;
+  };
+  comment?: string;
+};
 
-function createIngredient(): Ingredient {
+function makeIngredient(name = "", amount = ""): Ingredient {
   return {
     id: crypto.randomUUID(),
-    name: "",
-    amount: "",
-    basis: "raw",
+    name,
+    amount,
   };
 }
 
-function basisLabel(b: IngredientBasis | undefined) {
-  return b === "cooked" ? "готовый" : "сырой";
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : "Unknown error";
 }
 
-function buildIngredientsText(ings: Ingredient[]) {
-  return ings
-    .filter((i) => i.name.trim() !== "")
-    .map((i) => {
-      const a = i.amount?.trim() ? ` — ${i.amount.trim()}` : "";
-      return `${i.name.trim()}${a} (${basisLabel(i.basis)})`;
-    })
-    .join(", ");
+function numU(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    throw new Error(text || `HTTP ${r.status}`);
+  }
+
+  return (await r.json()) as T;
 }
 
 export default function NewDishPage() {
@@ -61,72 +92,157 @@ export default function NewDishPage() {
   const [timeMinutes, setTimeMinutes] = useState<number | undefined>(15);
   const [macros, setMacros] = useState<Macros>({});
   const [tags, setTags] = useState<DishTag[]>([]);
-  const [ingredients, setIngredients] = useState<Ingredient[]>([createIngredient()]);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([
+    makeIngredient(),
+  ]);
   const [instructions, setInstructions] = useState("");
   const [notes, setNotes] = useState("");
+
   const [saving, setSaving] = useState(false);
 
-  // AI (КБЖУ)
   const [aiBusy, setAiBusy] = useState(false);
+  const [aiMacrosBusy, setAiMacrosBusy] = useState(false);
   const [aiComment, setAiComment] = useState<string>("");
 
+  const ingredientsText = useMemo(() => {
+    const parts = ingredients
+      .map((i) => {
+        const n = i.name?.trim();
+        if (!n) return "";
+        const a = i.amount?.trim();
+        return a ? `${a} ${n}` : n;
+      })
+      .filter(Boolean);
+    return parts.join(", ");
+  }, [ingredients]);
+
   const toggleTag = (tag: DishTag) => {
-    setTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+    setTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    );
   };
 
-  const setIngredientName = (id: string, value: string) => {
-    setIngredients((prev) => prev.map((i) => (i.id === id ? { ...i, name: value } : i)));
+  const updateIngredient = (
+    id: string,
+    field: "name" | "amount" | "calories",
+    value: string,
+  ) => {
+    setIngredients((prev) =>
+      prev.map((ing) =>
+        ing.id === id
+          ? {
+              ...ing,
+              [field]:
+                field === "calories" && value !== ""
+                  ? Number(value)
+                  : field === "calories"
+                    ? undefined
+                    : value,
+            }
+          : ing,
+      ),
+    );
   };
 
-  const setIngredientAmount = (id: string, value: string) => {
-    setIngredients((prev) => prev.map((i) => (i.id === id ? { ...i, amount: value } : i)));
+  const addIngredientRow = () => {
+    setIngredients((prev) => [...prev, makeIngredient()]);
   };
 
-  const setIngredientCalories = (id: string, value: string) => {
-    const num = value === "" ? undefined : Number(value);
-    setIngredients((prev) => prev.map((i) => (i.id === id ? { ...i, calories: num } : i)));
+  const removeIngredient = (id: string) => {
+    setIngredients((prev) => prev.filter((ing) => ing.id !== id));
   };
 
-  const setIngredientBasis = (id: string, basis: IngredientBasis) => {
-    setIngredients((prev) => prev.map((i) => (i.id === id ? { ...i, basis } : i)));
-  };
-
-  const addIngredientRow = () => setIngredients((prev) => [...prev, createIngredient()]);
-  const removeIngredient = (id: string) => setIngredients((prev) => prev.filter((i) => i.id !== id));
-
-  const handleAiMacros = async () => {
-    if (!title.trim() && ingredients.every((i) => !i.name.trim())) return;
+  // === AI: автозаполнение блюда (ингредиенты/граммовки/инструкция) ===
+  const handleAiAutofill = async () => {
+    const dishName = title.trim();
+    if (!dishName) {
+      alert("Сначала укажи название блюда — по нему ИИ поймёт, что заполнять.");
+      return;
+    }
 
     setAiBusy(true);
     setAiComment("");
-    try {
-      const payload = {
-        name: title.trim() || "Блюдо",
-        ingredients: buildIngredientsText(ingredients),
-      };
 
-      const res = await fetch("/api/ai/dish-macros", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+    try {
+      const out = await postJson<AutofillOut>("/api/ai/dish-autofill", {
+        name: dishName,
+        category,
+        timeMinutes,
+        // если уже что-то накидал — можно дать контекст
+        ingredients: ingredientsText || undefined,
+        instructions: instructions.trim() || undefined,
       });
 
-      const data = (await res.json()) as AiResponse;
-
-      if (!res.ok) {
-        throw new Error(data?.error || "Ошибка AI расчёта КБЖУ");
+      if (typeof out.title === "string" && out.title.trim()) {
+        setTitle(out.title.trim());
+      }
+      if (out.category) setCategory(out.category);
+      if (typeof out.timeMinutes === "number" && Number.isFinite(out.timeMinutes)) {
+        setTimeMinutes(out.timeMinutes);
       }
 
-      if (data.macros && typeof data.macros === "object") {
-        setMacros((prev) => ({ ...prev, ...data.macros }));
+      if (Array.isArray(out.ingredients) && out.ingredients.length > 0) {
+        setIngredients(
+          out.ingredients.map((x) =>
+            makeIngredient(String(x.name ?? "").trim(), String(x.amount ?? "").trim()),
+          ),
+        );
       }
 
-      setAiComment(data.comment ?? data.notes ?? "");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Ошибка AI расчёта КБЖУ";
-      alert(msg);
+      if (typeof out.instructions === "string") setInstructions(out.instructions);
+      if (typeof out.notes === "string") setNotes(out.notes);
+
+      if (out.macros && typeof out.macros === "object") {
+        setMacros((prev) => ({
+          ...prev,
+          calories: out.macros?.calories ?? prev.calories,
+          protein: out.macros?.protein ?? prev.protein,
+          fat: out.macros?.fat ?? prev.fat,
+          carbs: out.macros?.carbs ?? prev.carbs,
+          fiber: out.macros?.fiber ?? prev.fiber,
+        }));
+      }
+
+      if (typeof out.comment === "string") setAiComment(out.comment);
+    } catch (e: unknown) {
+      alert(`AI автозаполнение: ${errMsg(e)}`);
     } finally {
       setAiBusy(false);
+    }
+  };
+
+  // === AI: расчёт/пересчёт КБЖУ ===
+  const handleAiMacros = async () => {
+    const dishName = title.trim() || "Блюдо";
+    if (!ingredientsText || ingredientsText.length < 2) {
+      alert("Добавь хотя бы 1 ингредиент, чтобы ИИ посчитал КБЖУ.");
+      return;
+    }
+
+    setAiMacrosBusy(true);
+    setAiComment("");
+
+    try {
+      const out = await postJson<MacrosApiOut>("/api/ai/dish-macros", {
+        name: dishName,
+        ingredients: ingredientsText,
+      });
+
+      const m = out?.macros ?? {};
+      setMacros((prev) => ({
+        ...prev,
+        calories: numU(m.calories) ?? prev.calories,
+        protein: numU(m.protein) ?? prev.protein,
+        fat: numU(m.fat) ?? prev.fat,
+        carbs: numU(m.carbs) ?? prev.carbs,
+        fiber: numU(m.fiber) ?? prev.fiber,
+      }));
+
+      if (typeof out.comment === "string") setAiComment(out.comment);
+    } catch (e: unknown) {
+      alert(`AI КБЖУ: ${errMsg(e)}`);
+    } finally {
+      setAiMacrosBusy(false);
     }
   };
 
@@ -135,6 +251,7 @@ export default function NewDishPage() {
     if (!title.trim()) return;
 
     setSaving(true);
+
     try {
       const now = new Date().toISOString();
 
@@ -144,9 +261,7 @@ export default function NewDishPage() {
         category,
         timeMinutes,
         difficulty: undefined,
-        ingredients: ingredients
-          .filter((i) => i.name.trim() !== "")
-          .map((i) => ({ ...i, basis: i.basis ?? "raw" })),
+        ingredients: ingredients.filter((ing) => ing.name.trim() !== ""),
         macros,
         tags,
         instructions: instructions.trim() || undefined,
@@ -164,11 +279,6 @@ export default function NewDishPage() {
       setSaving(false);
     }
   };
-
-  const macroKeys = useMemo<MacroKey[]>(
-    () => ["calories", "protein", "fat", "carbs", "fiber"],
-    [],
-  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -193,7 +303,7 @@ export default function NewDishPage() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
-              placeholder="Омлет с овощами"
+              placeholder="Мясо с картошкой"
               className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
             />
           </label>
@@ -218,7 +328,10 @@ export default function NewDishPage() {
               type="number"
               min={1}
               value={timeMinutes ?? ""}
-              onChange={(e) => setTimeMinutes(e.target.value === "" ? undefined : Number(e.target.value))}
+              onChange={(e) => {
+                const value = e.target.value;
+                setTimeMinutes(value === "" ? undefined : Number(value));
+              }}
               className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
             />
           </label>
@@ -228,42 +341,102 @@ export default function NewDishPage() {
         <section className="space-y-2">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-medium">Макронутриенты (опционально)</h3>
+
             <button
               type="button"
               onClick={handleAiMacros}
-              disabled={aiBusy}
+              disabled={aiMacrosBusy}
               className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              title="ИИ посчитает КБЖУ по текущим ингредиентам"
             >
-              {aiBusy ? "Считаю..." : "Заполнить КБЖУ с ИИ"}
+              {aiMacrosBusy ? "Считаю..." : "Заполнить КБЖУ с ИИ"}
             </button>
           </div>
 
           {aiComment ? (
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="text-xs text-zinc-600 dark:text-zinc-300">
               <span className="font-medium">Комментарий ИИ:</span> {aiComment}
             </p>
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-5">
-            {macroKeys.map((k) => (
-              <label key={k} className="flex flex-col gap-1 text-xs">
-                {k === "calories" ? "Ккал" : k === "protein" ? "Белки (г)" : k === "fat" ? "Жиры (г)" : k === "carbs" ? "Углеводы (г)" : "Клетчатка (г)"}
-                <input
-                  type="number"
-                  value={macros[k] ?? ""}
-                  onChange={(e) =>
-                    setMacros((prev) => ({
-                      ...prev,
-                      [k]: e.target.value === "" ? undefined : Number(e.target.value),
-                    }))
-                  }
-                  className="rounded-lg border border-zinc-300 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-                />
-              </label>
-            ))}
+            <label className="flex flex-col gap-1 text-xs">
+              Ккал
+              <input
+                type="number"
+                value={macros.calories ?? ""}
+                onChange={(e) =>
+                  setMacros((prev) => ({
+                    ...prev,
+                    calories: e.target.value === "" ? undefined : Number(e.target.value),
+                  }))
+                }
+                className="rounded-lg border border-zinc-300 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs">
+              Белки (г)
+              <input
+                type="number"
+                value={macros.protein ?? ""}
+                onChange={(e) =>
+                  setMacros((prev) => ({
+                    ...prev,
+                    protein: e.target.value === "" ? undefined : Number(e.target.value),
+                  }))
+                }
+                className="rounded-lg border border-zinc-300 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs">
+              Жиры (г)
+              <input
+                type="number"
+                value={macros.fat ?? ""}
+                onChange={(e) =>
+                  setMacros((prev) => ({
+                    ...prev,
+                    fat: e.target.value === "" ? undefined : Number(e.target.value),
+                  }))
+                }
+                className="rounded-lg border border-zinc-300 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs">
+              Углеводы (г)
+              <input
+                type="number"
+                value={macros.carbs ?? ""}
+                onChange={(e) =>
+                  setMacros((prev) => ({
+                    ...prev,
+                    carbs: e.target.value === "" ? undefined : Number(e.target.value),
+                  }))
+                }
+                className="rounded-lg border border-zinc-300 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs">
+              Клетчатка (г)
+              <input
+                type="number"
+                value={macros.fiber ?? ""}
+                onChange={(e) =>
+                  setMacros((prev) => ({
+                    ...prev,
+                    fiber: e.target.value === "" ? undefined : Number(e.target.value),
+                  }))
+                }
+                className="rounded-lg border border-zinc-300 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+              />
+            </label>
           </div>
 
-          <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+          <p className="text-xs text-zinc-500">
             Для круп/макарон важно указать <b>сырой</b> или <b>готовый</b> вес — иначе ккал могут улететь в космос.
           </p>
         </section>
@@ -294,15 +467,29 @@ export default function NewDishPage() {
 
         {/* Ингредиенты */}
         <section className="space-y-2">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-medium">Ингредиенты</h3>
-            <button
-              type="button"
-              onClick={addIngredientRow}
-              className="text-xs font-medium text-zinc-700 hover:underline dark:text-zinc-200"
-            >
-              + Добавить ингредиент
-            </button>
+
+            <div className="flex items-center gap-2">
+              {/* ВОТ ОНА — кнопка, которая у тебя пропадает */}
+              <button
+                type="button"
+                onClick={handleAiAutofill}
+                disabled={aiBusy}
+                className="rounded-full bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                title="ИИ заполнит ингредиенты/граммовки/инструкцию по названию блюда"
+              >
+                {aiBusy ? "Заполняю..." : "Автозаполнить блюдо с ИИ"}
+              </button>
+
+              <button
+                type="button"
+                onClick={addIngredientRow}
+                className="text-xs font-medium text-zinc-700 hover:underline dark:text-zinc-200"
+              >
+                + Добавить ингредиент
+              </button>
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -324,33 +511,24 @@ export default function NewDishPage() {
                   )}
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-[2fr_1.2fr_1fr_1fr]">
+                <div className="grid gap-2 sm:grid-cols-[2fr_1.5fr_1fr]">
                   <input
-                    placeholder="Название (например, рис басмати)"
+                    placeholder="Название (например, мясо)"
                     value={ing.name}
-                    onChange={(e) => setIngredientName(ing.id, e.target.value)}
+                    onChange={(e) => updateIngredient(ing.id, "name", e.target.value)}
                     className="rounded-lg border border-zinc-300 bg-transparent px-2 py-1.5 text-xs outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
                   />
                   <input
-                    placeholder="Кол-во (200 г / 2 шт)"
+                    placeholder="Кол-во (200 г, 2 шт)"
                     value={ing.amount}
-                    onChange={(e) => setIngredientAmount(ing.id, e.target.value)}
+                    onChange={(e) => updateIngredient(ing.id, "amount", e.target.value)}
                     className="rounded-lg border border-zinc-300 bg-transparent px-2 py-1.5 text-xs outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
                   />
-                  <select
-                    value={(ing.basis ?? "raw") as IngredientBasis}
-                    onChange={(e) => setIngredientBasis(ing.id, e.target.value as IngredientBasis)}
-                    className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
-                    title="Сырой/готовый вес (важно для круп, пасты, картофеля и т.д.)"
-                  >
-                    <option value="raw">Сырой</option>
-                    <option value="cooked">Готовый</option>
-                  </select>
                   <input
                     type="number"
                     placeholder="Ккал (опц.)"
                     value={ing.calories ?? ""}
-                    onChange={(e) => setIngredientCalories(ing.id, e.target.value)}
+                    onChange={(e) => updateIngredient(ing.id, "calories", e.target.value)}
                     className="rounded-lg border border-zinc-300 bg-transparent px-2 py-1.5 text-xs outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
                   />
                 </div>
@@ -366,8 +544,8 @@ export default function NewDishPage() {
             <textarea
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
-              rows={4}
-              className="min-h-[80px] rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+              rows={5}
+              className="min-h-[100px] rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
             />
           </label>
 
@@ -376,8 +554,8 @@ export default function NewDishPage() {
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              rows={4}
-              className="min-h-[80px] rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+              rows={5}
+              className="min-h-[100px] rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
             />
           </label>
         </section>
@@ -390,6 +568,7 @@ export default function NewDishPage() {
           >
             Отмена
           </button>
+
           <button
             type="submit"
             disabled={saving}
