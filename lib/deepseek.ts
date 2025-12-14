@@ -18,7 +18,7 @@ type ChatCompletionResponse = {
     error?: { message?: string };
 };
 
-type DeepSeekChatOptions = {
+export type DeepSeekChatOptions = {
     model?: string;
     temperature?: number;
     max_tokens?: number;
@@ -30,12 +30,8 @@ function getEnv(name: string): string {
     return v;
 }
 
-function normalizeMessages(
-    input: string | DeepSeekMessage[],
-): DeepSeekMessage[] {
-    if (typeof input === "string") {
-        return [{ role: "user", content: input }];
-    }
+function normalizeMessages(input: string | DeepSeekMessage[]): DeepSeekMessage[] {
+    if (typeof input === "string") return [{ role: "user", content: input }];
     return input;
 }
 
@@ -83,30 +79,107 @@ export async function deepseekChat(
     return content.trim();
 }
 
+// ----- JSON utils -----
+
+function stripCodeFences(s: string): string {
+    const m = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    return (m?.[1] ?? s).trim();
+}
+
+function extractLikelyJson(s: string): string {
+    const t = stripCodeFences(s);
+
+    // попытка найти первый JSON-объект/массив в тексте
+    const objStart = t.indexOf("{");
+    const arrStart = t.indexOf("[");
+    const start =
+        objStart === -1 ? arrStart : arrStart === -1 ? objStart : Math.min(objStart, arrStart);
+
+    if (start === -1) return t;
+
+    // грубо ищем последнюю закрывающую скобку
+    const endObj = t.lastIndexOf("}");
+    const endArr = t.lastIndexOf("]");
+    const end = Math.max(endObj, endArr);
+
+    if (end === -1 || end <= start) return t;
+    return t.slice(start, end + 1).trim();
+}
+
+function schemaHint(schema?: unknown): string {
+    if (!schema) {
+        return "Ответь СТРОГО валидным JSON без markdown, без пояснений и без текста вокруг.";
+    }
+    return (
+        "Ответь СТРОГО валидным JSON без markdown, без пояснений и без текста вокруг.\n" +
+        "Схема/формат, которого нужно придерживаться:\n" +
+        JSON.stringify(schema, null, 2)
+    );
+}
+
 /**
- * Если хочешь получать именно JSON — удобный хелпер.
- * Он попросит модель вернуть чистый JSON и распарсит его.
+ * deepseekJson — 2 режима:
+ * 1) deepseekJson(messages[], opts?)
+ * 2) deepseekJson(prompt, schema?, system?, opts?)
  */
 export async function deepseekJson<T>(
     messages: DeepSeekMessage[],
-    opts: DeepSeekChatOptions = {},
+    opts?: DeepSeekChatOptions,
+): Promise<T>;
+export async function deepseekJson<T>(
+    prompt: string,
+    schema?: unknown,
+    system?: string,
+    opts?: DeepSeekChatOptions,
+): Promise<T>;
+export async function deepseekJson<T>(
+    arg1: DeepSeekMessage[] | string,
+    arg2?: DeepSeekChatOptions | unknown,
+    arg3?: string,
+    arg4?: DeepSeekChatOptions,
 ): Promise<T> {
-    const jsonHint: DeepSeekMessage = {
-        role: "system",
-        content:
-            "Ответь СТРОГО валидным JSON без markdown, без пояснений и без текста вокруг.",
-    };
+    let messages: DeepSeekMessage[];
+    let opts: DeepSeekChatOptions | undefined;
 
-    const content = await deepseekChat([jsonHint, ...messages], {
-        ...opts,
-        temperature: opts.temperature ?? 0,
+    if (typeof arg1 === "string") {
+        const prompt = arg1;
+        const schema = arg2; // неизвестный формат подсказки
+        const system = arg3;
+        opts = arg4;
+
+        const sysMsg: DeepSeekMessage = {
+            role: "system",
+            content: system ? `${system}\n\n${schemaHint(schema)}` : schemaHint(schema),
+        };
+
+        messages = [sysMsg, { role: "user", content: prompt }];
+    } else {
+        // старый режим: deepseekJson(messages, opts)
+        messages = [
+            {
+                role: "system",
+                content: schemaHint(undefined),
+            },
+            ...arg1,
+        ];
+        opts = arg2 as DeepSeekChatOptions | undefined;
+    }
+
+    const content = await deepseekChat(messages, {
+        ...(opts ?? {}),
+        temperature: opts?.temperature ?? 0,
     });
 
+    const jsonText = extractLikelyJson(content);
+
     try {
-        return JSON.parse(content) as T;
+        return JSON.parse(jsonText) as T;
     } catch {
         throw new Error(
-            `Model did not return valid JSON. Got: ${content.slice(0, 400)}`,
+            `Model did not return valid JSON. Got: ${jsonText.slice(0, 600)}`,
         );
     }
 }
+
+// Backward-compatible alias (чтобы старые роуты не падали)
+export const deepseek: typeof deepseekChat = deepseekChat;
