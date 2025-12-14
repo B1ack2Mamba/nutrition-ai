@@ -13,12 +13,14 @@ export type DishTag =
   | "diabetic_friendly";
 
 export type Difficulty = "easy" | "medium" | "hard";
+export type IngredientBasis = "raw" | "cooked";
 
 export type Ingredient = {
-  id: string;
-  name: string;
-  amount: string;
-  calories?: number;
+    id: string;
+    name: string;
+    amount: string;
+    calories?: number;
+    basis?: IngredientBasis; // <-- ДОБАВИТЬ (сырой/готовый)
 };
 
 export type Macros = {
