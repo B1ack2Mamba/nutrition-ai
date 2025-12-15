@@ -1,1216 +1,1205 @@
-// app/nutritionist/clients/[clientId]/page.tsx
 "use client";
 
 import Link from "next/link";
 import {
-    useEffect,
-    useMemo,
-    useState,
-    FormEvent,
-    ChangeEvent,
-    useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  FormEvent,
+  ChangeEvent,
+  useCallback,
 } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Menu, loadMenusFromStorage } from "@/lib/menus";
 
 type BasicProfile = {
-    id: string;
-    full_name: string | null;
+  id: string;
+  full_name: string | null;
 };
 
 type ExtendedProfile = {
-    user_id: string;
-    main_goal: string | null;
-    goal_description: string | null;
-    allergies: string | null;
-    banned_foods: string | null;
-    preferences: string | null;
-    monthly_budget: number | null;
+  user_id: string;
+  main_goal: string | null;
+  goal_description: string | null;
+  allergies: string | null;
+  banned_foods: string | null;
+  preferences: string | null;
+  monthly_budget: number | null;
 };
 
 type Assignment = {
-    id: string;
-    client_id: string;
-    nutritionist_id: string;
-    title: string;
-    notes: string | null;
-    status: "active" | "archived" | null;
-    start_date: string | null;
-    end_date: string | null;
-    created_at: string;
-    menu_id: string | null;
-    days_count: number | null;
-    menu_data: Menu | null;
+  id: string;
+  client_id: string;
+  nutritionist_id: string;
+  title: string;
+  notes: string | null;
+  status: "active" | "archived" | null;
+  start_date: string | null;
+  end_date: string | null;
+  created_at: string;
+  menu_id: string | null;
+  days_count: number | null;
+  menu_data: Menu | null;
 };
 
 type JournalEntry = {
-    id: string;
-    entry_date: string;
-    weight_kg: number | null;
-    energy_level: number | null;
-    mood: number | null;
-    notes: string | null;
+  id: string;
+  entry_date: string;
+  weight_kg: number | null;
+  energy_level: number | null;
+  mood: number | null;
+  notes: string | null;
 };
 
 type LabReport = {
-    id: string;
-    client_id: string;
-    nutritionist_id: string | null;
-    title: string | null;
-    taken_at: string | null;
-    file_path: string;
-    file_url: string | null;
-    ai_summary: string | null;
-    created_at: string;
+  id: string;
+  client_id: string;
+  nutritionist_id: string | null;
+  title: string | null;
+  taken_at: string | null;
+  file_path: string;
+  file_url: string | null;
+  ai_summary: string | null;
+  created_at: string;
+};
+
+type FoodRuleRow = {
+  id: string;
+  client_id: string;
+  nutritionist_id: string;
+  allowed: string | null;
+  banned: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string | null;
 };
 
 function formatDate(d: string | null | undefined): string {
-    if (!d) return "—";
-    const dt = new Date(d);
-    if (Number.isNaN(dt.getTime())) return "—";
-    return dt.toLocaleDateString();
+  if (!d) return "—";
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return "—";
+  return dt.toLocaleDateString();
 }
 
 function splitTokens(s: string | null | undefined): string[] {
-    if (!s) return [];
-    return s
-        .split(/[,;\n]/g)
-        .map((x) => x.trim())
-        .filter(Boolean)
-        .slice(0, 20);
+  if (!s) return [];
+  return s
+    .split(/[,;\n]/g)
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .slice(0, 30);
 }
 
 export default function ClientDetailPage() {
-    const params = useParams<{ clientId: string }>();
-    const clientId = params.clientId;
+  const params = useParams<{ clientId: string }>();
+  const clientId = params.clientId;
 
-    const [basic, setBasic] = useState<BasicProfile | null>(null);
-    const [extended, setExtended] = useState<ExtendedProfile | null>(null);
-    const [assignments, setAssignments] = useState<Assignment[]>([]);
-    const [journal, setJournal] = useState<JournalEntry[]>([]);
-    const [menus, setMenus] = useState<Menu[]>([]);
+  const [basic, setBasic] = useState<BasicProfile | null>(null);
+  const [extended, setExtended] = useState<ExtendedProfile | null>(null);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [journal, setJournal] = useState<JournalEntry[]>([]);
+  const [menus, setMenus] = useState<Menu[]>([]);
 
-    const [loading, setLoading] = useState(true);
-    const [fatalError, setFatalError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [fatalError, setFatalError] = useState<string | null>(null);
 
-    const [selectedMenuId, setSelectedMenuId] = useState<string>("");
-    const [newNotes, setNewNotes] = useState("");
-    const [savingAssign, setSavingAssign] = useState(false);
+  const [selectedMenuId, setSelectedMenuId] = useState<string>("");
+  const [newNotes, setNewNotes] = useState("");
+  const [savingAssign, setSavingAssign] = useState(false);
 
-    const [journalRange, setJournalRange] = useState<"7" | "30" | "all">("30");
+  const [journalRange, setJournalRange] = useState<"7" | "30" | "all">("30");
 
-    // ✅ сворачиваемая форма назначения меню
-    const [showAssignForm, setShowAssignForm] = useState(false);
+  // ✅ сворачиваемая форма назначения меню
+  const [showAssignForm, setShowAssignForm] = useState(false);
 
-    // Анализы (не фатально, если таблицы/бакета нет)
-    const [labReports, setLabReports] = useState<LabReport[]>([]);
-    const [labHint, setLabHint] = useState<string | null>(null);
-    const [labUploading, setLabUploading] = useState(false);
-    const [labTitle, setLabTitle] = useState("");
-    const [labTakenAt, setLabTakenAt] = useState<string>("");
+  // ✅ показывать “примерно половину” назначений по умолчанию (чтобы блок визуально был короче)
+  const [showAllAssignments, setShowAllAssignments] = useState(false);
 
-    // локальные меню нутрициолога из localStorage
-    useEffect(() => {
-        const storedMenus = loadMenusFromStorage();
-        setMenus(storedMenus);
-    }, []);
+  // Анализы (не фатально, если таблицы/бакета нет)
+  const [labReports, setLabReports] = useState<LabReport[]>([]);
+  const [labHint, setLabHint] = useState<string | null>(null);
+  const [labUploading, setLabUploading] = useState(false);
+  const [labTitle, setLabTitle] = useState("");
+  const [labTakenAt, setLabTakenAt] = useState<string>("");
 
-    const reloadAssignments = useCallback(
-        async (nutritionistId: string) => {
-            const { data: assRows } = await supabase
-                .from("client_menu_assignments")
-                .select("*")
-                .eq("client_id", clientId)
-                .eq("nutritionist_id", nutritionistId)
-                .order("created_at", { ascending: false });
+  // ✅ “Можно / Нельзя”
+  const [foodHint, setFoodHint] = useState<string | null>(null);
+  const [foodRuleId, setFoodRuleId] = useState<string | null>(null);
+  const [foodAllowed, setFoodAllowed] = useState("");
+  const [foodBanned, setFoodBanned] = useState("");
+  const [foodNotes, setFoodNotes] = useState("");
+  const [foodSaving, setFoodSaving] = useState(false);
 
-            if (assRows) setAssignments(assRows as Assignment[]);
-        },
-        [clientId],
-    );
+  // локальные меню нутрициолога из localStorage
+  useEffect(() => {
+    const storedMenus = loadMenusFromStorage();
+    setMenus(storedMenus);
+  }, []);
 
-    const reloadLabReports = useCallback(
-        async (nutritionistId: string) => {
-            const { data, error } = await supabase
-                .from("client_lab_reports")
-                .select("*")
-                .eq("client_id", clientId)
-                .eq("nutritionist_id", nutritionistId)
-                .order("taken_at", { ascending: false });
+  const reloadAssignments = useCallback(
+    async (nutritionistId: string) => {
+      const { data: assRows } = await supabase
+        .from("client_menu_assignments")
+        .select("*")
+        .eq("client_id", clientId)
+        .eq("nutritionist_id", nutritionistId)
+        .order("created_at", { ascending: false });
 
-            if (error) {
-                setLabHint(
-                    "Секция анализов не настроена (нет таблицы client_lab_reports и/или бакета lab_reports). Можно добавить позже.",
-                );
-                return;
-            }
+      if (assRows) setAssignments(assRows as Assignment[]);
+    },
+    [clientId],
+  );
 
-            setLabHint(null);
-            setLabReports((data ?? []) as LabReport[]);
-        },
-        [clientId],
-    );
+  const reloadLabReports = useCallback(
+    async (nutritionistId: string) => {
+      const { data, error } = await supabase
+        .from("client_lab_reports")
+        .select("*")
+        .eq("client_id", clientId)
+        .eq("nutritionist_id", nutritionistId)
+        .order("taken_at", { ascending: false });
 
-    useEffect(() => {
-        const load = async () => {
-            setLoading(true);
-            setFatalError(null);
+      if (error) {
+        setLabHint(
+          "Секция анализов не настроена (нет таблицы client_lab_reports и/или бакета lab_reports). Можно добавить позже.",
+        );
+        return;
+      }
 
-            const {
-                data: { user },
-            } = await supabase.auth.getUser();
+      setLabHint(null);
+      setLabReports((data ?? []) as LabReport[]);
+    },
+    [clientId],
+  );
 
-            if (!user) {
-                setFatalError("Нет авторизации");
-                setLoading(false);
-                return;
-            }
+  const reloadFoodRules = useCallback(
+    async (nutritionistId: string) => {
+      const { data, error } = await supabase
+        .from("client_food_rules")
+        .select("*")
+        .eq("client_id", clientId)
+        .eq("nutritionist_id", nutritionistId)
+        .order("created_at", { ascending: false })
+        .limit(1);
 
-            // базовый профиль клиента
-            const { data: prof, error: profErr } = await supabase
-                .from("profiles")
-                .select("id, full_name")
-                .eq("id", clientId)
-                .single();
+      if (error) {
+        setFoodHint(
+          "Секция «Можно/Нельзя» не настроена (нет таблицы client_food_rules или нет прав). Можно добавить позже.",
+        );
+        setFoodRuleId(null);
+        setFoodAllowed("");
+        setFoodBanned("");
+        setFoodNotes("");
+        return;
+      }
 
-            if (profErr) {
-                setFatalError(profErr.message);
-                setLoading(false);
-                return;
-            }
+      setFoodHint(null);
+      const row = (data?.[0] ?? null) as FoodRuleRow | null;
+      setFoodRuleId(row?.id ?? null);
+      setFoodAllowed(row?.allowed ?? "");
+      setFoodBanned(row?.banned ?? "");
+      setFoodNotes(row?.notes ?? "");
+    },
+    [clientId],
+  );
 
-            setBasic(prof as BasicProfile);
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setFatalError(null);
 
-            // расширенный профиль
-            const { data: extRows } = await supabase
-                .from("client_profiles")
-                .select("*")
-                .eq("user_id", clientId)
-                .limit(1);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-            if (extRows && extRows.length > 0) {
-                setExtended(extRows[0] as ExtendedProfile);
-            } else {
-                setExtended(null);
-            }
+      if (!user) {
+        setFatalError("Нет авторизации");
+        setLoading(false);
+        return;
+      }
 
-            // назначения рационов
-            const { data: assRows, error: assErr } = await supabase
-                .from("client_menu_assignments")
-                .select("*")
-                .eq("client_id", clientId)
-                .eq("nutritionist_id", user.id)
-                .order("created_at", { ascending: false });
+      // базовый профиль клиента
+      const { data: prof, error: profErr } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .eq("id", clientId)
+        .single();
 
-            if (assErr) {
-                setFatalError(assErr.message);
-            } else if (assRows) {
-                setAssignments(assRows as Assignment[]);
-            }
+      if (profErr) {
+        setFatalError(profErr.message);
+        setLoading(false);
+        return;
+      }
 
-            // дневник
-            const { data: journalRows } = await supabase
-                .from("client_journal_entries")
-                .select("*")
-                .eq("user_id", clientId)
-                .order("entry_date", { ascending: true });
+      setBasic(prof as BasicProfile);
 
-            if (journalRows) setJournal(journalRows as JournalEntry[]);
+      // расширенный профиль
+      const { data: extRows } = await supabase
+        .from("client_profiles")
+        .select("*")
+        .eq("user_id", clientId)
+        .limit(1);
 
-            // анализы (опционально)
-            await reloadLabReports(user.id);
+      if (extRows && extRows.length > 0) {
+        setExtended(extRows[0] as ExtendedProfile);
+      } else {
+        setExtended(null);
+      }
 
-            setLoading(false);
-        };
+      // назначения рационов
+      const { data: assRows, error: assErr } = await supabase
+        .from("client_menu_assignments")
+        .select("*")
+        .eq("client_id", clientId)
+        .eq("nutritionist_id", user.id)
+        .order("created_at", { ascending: false });
 
-        if (clientId) load();
-    }, [clientId, reloadLabReports]);
+      if (assErr) {
+        setFatalError(assErr.message);
+      } else if (assRows) {
+        setAssignments(assRows as Assignment[]);
+      }
 
-    // ✅ ВАЖНО: считаем “рационами” только те назначения, где реально есть меню.
-    const menuAssignments = useMemo(() => {
-        return assignments.filter((a) => !!a.menu_id || !!a.menu_data);
-    }, [assignments]);
+      // дневник
+      const { data: journalRows } = await supabase
+        .from("client_journal_entries")
+        .select("*")
+        .eq("user_id", clientId)
+        .order("entry_date", { ascending: true });
 
-    const hiddenLegacyCount = useMemo(() => {
-        const n = assignments.length - menuAssignments.length;
-        return n > 0 ? n : 0;
-    }, [assignments.length, menuAssignments.length]);
+      if (journalRows) setJournal(journalRows as JournalEntry[]);
 
-    // ✅ активный рацион: строго active, иначе (для старых данных) берём самый свежий status=null, иначе null
-    const activeAssignment = useMemo(() => {
-        const explicit = menuAssignments.find((a) => a.status === "active");
-        if (explicit) return explicit;
-        const legacy = menuAssignments.find((a) => a.status == null);
-        return legacy ?? null;
-    }, [menuAssignments]);
+      // анализы (опционально)
+      await reloadLabReports(user.id);
 
-    const goalTokens = useMemo(() => {
-        const t: { label: string; items: string[] }[] = [];
-        const allergies = splitTokens(extended?.allergies);
-        const banned = splitTokens(extended?.banned_foods);
-        const prefs = splitTokens(extended?.preferences);
+      // ✅ можно/нельзя (опционально)
+      await reloadFoodRules(user.id);
 
-        if (allergies.length) t.push({ label: "Аллергии", items: allergies });
-        if (banned.length) t.push({ label: "Запрещено", items: banned });
-        if (prefs.length) t.push({ label: "Предпочтения", items: prefs });
-
-        return t;
-    }, [extended]);
-
-    const filteredJournal = useMemo(() => {
-        if (journalRange === "all") return journal;
-        const days = journalRange === "7" ? 7 : 30;
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - days);
-        return journal.filter((e) => new Date(e.entry_date) >= cutoff);
-    }, [journal, journalRange]);
-
-    const weightSeries = useMemo(() => {
-        return filteredJournal
-            .filter((j) => j.weight_kg != null)
-            .map((j) => ({ d: j.entry_date, w: Number(j.weight_kg) }))
-            .filter((x) => Number.isFinite(x.w));
-    }, [filteredJournal]);
-
-    const progress = useMemo(() => {
-        const start = weightSeries[0]?.w ?? null;
-        const last = weightSeries.length
-            ? weightSeries[weightSeries.length - 1].w
-            : null;
-        const delta = start != null && last != null ? last - start : null;
-
-        const energies = filteredJournal
-            .map((e) => e.energy_level)
-            .filter(
-                (x): x is number => typeof x === "number" && Number.isFinite(x),
-            );
-        const moods = filteredJournal
-            .map((e) => e.mood)
-            .filter(
-                (x): x is number => typeof x === "number" && Number.isFinite(x),
-            );
-
-        const avg = (arr: number[]) =>
-            arr.length
-                ? Math.round(
-                      (arr.reduce((a, b) => a + b, 0) / arr.length) * 10,
-                  ) / 10
-                : null;
-
-        return {
-            startWeight: start,
-            lastWeight: last,
-            deltaWeight: delta,
-            avgEnergy: avg(energies),
-            avgMood: avg(moods),
-            entriesCount: filteredJournal.length,
-        };
-    }, [filteredJournal, weightSeries]);
-
-    const weightPath = useMemo(() => {
-        if (weightSeries.length < 2) return null;
-
-        const wVals = weightSeries.map((x) => x.w);
-        const minW = Math.min(...wVals);
-        let maxW = Math.max(...wVals);
-        if (maxW === minW) maxW = minW + 1;
-
-        const W = 260;
-        const H = 64;
-        const pad = 6;
-
-        const points = weightSeries.map((p, i) => {
-            const x = pad + (i / (weightSeries.length - 1)) * (W - pad * 2);
-            const k = (p.w - minW) / (maxW - minW);
-            const y = pad + (1 - k) * (H - pad * 2);
-            return { x, y };
-        });
-
-        const d = points
-            .map(
-                (p, i) =>
-                    `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`,
-            )
-            .join(" ");
-
-        return { d, W, H, minW, maxW };
-    }, [weightSeries]);
-
-    const setAssignmentStatus = async (
-        id: string,
-        status: "active" | "archived",
-    ) => {
-        const {
-            data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) return;
-
-        if (status === "active") {
-            await supabase
-                .from("client_menu_assignments")
-                .update({ status: "archived" })
-                .eq("client_id", clientId)
-                .eq("nutritionist_id", user.id)
-                .eq("status", "active");
-        }
-
-        const { error } = await supabase
-            .from("client_menu_assignments")
-            .update({ status })
-            .eq("id", id);
-
-        if (!error) await reloadAssignments(user.id);
+      setLoading(false);
     };
 
-    // ✅ Удаление назначения
-    const deleteAssignment = async (id: string) => {
-        const ok = window.confirm(
-            "Удалить это назначение меню? Действие необратимо.",
-        );
-        if (!ok) return;
+    if (clientId) load();
+  }, [clientId, reloadLabReports, reloadFoodRules]);
 
-        const {
-            data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) return;
+  // ✅ ВАЖНО: считаем “рационами” только те назначения, где реально есть меню.
+  const menuAssignments = useMemo(() => {
+    return assignments.filter((a) => !!a.menu_id || !!a.menu_data);
+  }, [assignments]);
 
+  const hiddenLegacyCount = useMemo(() => {
+    const n = assignments.length - menuAssignments.length;
+    return n > 0 ? n : 0;
+  }, [assignments.length, menuAssignments.length]);
+
+  const activeAssignment = useMemo(() => {
+    const explicit = menuAssignments.find((a) => a.status === "active");
+    if (explicit) return explicit;
+    return menuAssignments[0] ?? null;
+  }, [menuAssignments]);
+
+  const goalTokens = useMemo(() => {
+    const t: { label: string; items: string[] }[] = [];
+    const allergies = splitTokens(extended?.allergies);
+    const banned = splitTokens(extended?.banned_foods);
+    const prefs = splitTokens(extended?.preferences);
+
+    if (allergies.length) t.push({ label: "Аллергии", items: allergies });
+    if (banned.length) t.push({ label: "Запрещено (от клиента)", items: banned });
+    if (prefs.length) t.push({ label: "Предпочтения", items: prefs });
+
+    return t;
+  }, [extended]);
+
+  const filteredJournal = useMemo(() => {
+    if (journalRange === "all") return journal;
+    const days = journalRange === "7" ? 7 : 30;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    return journal.filter((e) => new Date(e.entry_date) >= cutoff);
+  }, [journal, journalRange]);
+
+  const weightSeries = useMemo(() => {
+    return filteredJournal
+      .filter((j) => j.weight_kg != null)
+      .map((j) => ({ d: j.entry_date, w: Number(j.weight_kg) }))
+      .filter((x) => Number.isFinite(x.w));
+  }, [filteredJournal]);
+
+  const progress = useMemo(() => {
+    const start = weightSeries[0]?.w ?? null;
+    const last = weightSeries.length ? weightSeries[weightSeries.length - 1].w : null;
+    const delta = start != null && last != null ? last - start : null;
+
+    const energies = filteredJournal
+      .map((e) => e.energy_level)
+      .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+    const moods = filteredJournal
+      .map((e) => e.mood)
+      .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+
+    const avg = (arr: number[]) =>
+      arr.length
+        ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10
+        : null;
+
+    return {
+      startWeight: start,
+      lastWeight: last,
+      deltaWeight: delta,
+      avgEnergy: avg(energies),
+      avgMood: avg(moods),
+      entriesCount: filteredJournal.length,
+    };
+  }, [filteredJournal, weightSeries]);
+
+  const weightPath = useMemo(() => {
+    if (weightSeries.length < 2) return null;
+
+    const wVals = weightSeries.map((x) => x.w);
+    const minW = Math.min(...wVals);
+    let maxW = Math.max(...wVals);
+    if (maxW === minW) maxW = minW + 1;
+
+    const W = 260;
+    const H = 64;
+    const pad = 6;
+
+    const points = weightSeries.map((p, i) => {
+      const x = pad + (i / (weightSeries.length - 1)) * (W - pad * 2);
+      const k = (p.w - minW) / (maxW - minW);
+      const y = pad + (1 - k) * (H - pad * 2);
+      return { x, y };
+    });
+
+    const d = points
+      .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+      .join(" ");
+
+    return { d, W, H, minW, maxW };
+  }, [weightSeries]);
+
+  const handleAssign = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!selectedMenuId) return;
+
+    setSavingAssign(true);
+    setFatalError(null);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setFatalError("Нет авторизации");
+      setSavingAssign(false);
+      return;
+    }
+
+    const menu = menus.find((m) => m.id === selectedMenuId);
+    if (!menu) {
+      setFatalError("Меню не найдено");
+      setSavingAssign(false);
+      return;
+    }
+
+    try {
+      // архивируем предыдущие active
+      await supabase
+        .from("client_menu_assignments")
+        .update({ status: "archived" })
+        .eq("client_id", clientId)
+        .eq("nutritionist_id", user.id)
+        .eq("status", "active");
+
+      const start = new Date();
+      const startIso = start.toISOString().slice(0, 10);
+      const endIso =
+        typeof menu.daysCount === "number" && menu.daysCount > 0
+          ? new Date(start.getTime() + (menu.daysCount - 1) * 86400000)
+              .toISOString()
+              .slice(0, 10)
+          : null;
+
+      const { error: insErr } = await supabase.from("client_menu_assignments").insert({
+        client_id: clientId,
+        nutritionist_id: user.id,
+        title: menu.title,
+        notes: newNotes.trim() || null,
+        status: "active",
+        start_date: startIso,
+        end_date: endIso,
+        menu_id: menu.id,
+        days_count: menu.daysCount ?? null,
+        menu_data: menu,
+      });
+
+      if (insErr) {
+        setFatalError(insErr.message);
+        return;
+      }
+
+      await reloadAssignments(user.id);
+      setSelectedMenuId("");
+      setNewNotes("");
+      setShowAssignForm(false);
+    } finally {
+      setSavingAssign(false);
+    }
+  };
+
+  const setAssignmentStatus = async (id: string, status: "active" | "archived") => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    if (status === "active") {
+      await supabase
+        .from("client_menu_assignments")
+        .update({ status: "archived" })
+        .eq("client_id", clientId)
+        .eq("nutritionist_id", user.id)
+        .eq("status", "active");
+    }
+
+    const { error } = await supabase
+      .from("client_menu_assignments")
+      .update({ status })
+      .eq("id", id);
+
+    if (!error) await reloadAssignments(user.id);
+  };
+
+  const deleteAssignment = async (id: string) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const ok = confirm("Удалить это назначение меню?");
+    if (!ok) return;
+
+    const { error } = await supabase.from("client_menu_assignments").delete().eq("id", id);
+    if (!error) await reloadAssignments(user.id);
+  };
+
+  const handleLabUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLabUploading(true);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setLabHint("Нет авторизации");
+      setLabUploading(false);
+      return;
+    }
+
+    try {
+      const safeName = file.name.replace(/[^\w.\-()]+/g, "_");
+      const path = `${clientId}/${Date.now()}_${safeName}`;
+
+      const up = await supabase.storage.from("lab_reports").upload(path, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+
+      if (up.error) {
+        setLabHint(`Не удалось загрузить файл в storage: ${up.error.message}`);
+        return;
+      }
+
+      const pub = supabase.storage.from("lab_reports").getPublicUrl(path);
+      const fileUrl = pub.data.publicUrl ?? null;
+
+      const ins = await supabase.from("client_lab_reports").insert({
+        client_id: clientId,
+        nutritionist_id: user.id,
+        title: labTitle.trim() || file.name,
+        taken_at: labTakenAt || null,
+        file_path: path,
+        file_url: fileUrl,
+        ai_summary: null,
+      });
+
+      if (ins.error) {
+        setLabHint(`Файл загрузился, но запись в таблицу не создалась: ${ins.error.message}`);
+        return;
+      }
+
+      setLabTitle("");
+      setLabTakenAt("");
+      await reloadLabReports(user.id);
+    } finally {
+      setLabUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const saveFoodRules = async () => {
+    setFoodSaving(true);
+    setFoodHint(null);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setFoodHint("Нет авторизации");
+      setFoodSaving(false);
+      return;
+    }
+
+    try {
+      const payload = {
+        client_id: clientId,
+        nutritionist_id: user.id,
+        allowed: foodAllowed.trim() || null,
+        banned: foodBanned.trim() || null,
+        notes: foodNotes.trim() || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (foodRuleId) {
         const { error } = await supabase
-            .from("client_menu_assignments")
-            .delete()
-            .eq("id", id)
-            .eq("client_id", clientId)
-            .eq("nutritionist_id", user.id);
+          .from("client_food_rules")
+          .update(payload)
+          .eq("id", foodRuleId);
 
         if (error) {
-            setFatalError(error.message);
-            return;
+          setFoodHint(error.message);
+          return;
+        }
+      } else {
+        const { data, error } = await supabase
+          .from("client_food_rules")
+          .insert(payload)
+          .select("*")
+          .limit(1);
+
+        if (error) {
+          setFoodHint(error.message);
+          return;
         }
 
-        await reloadAssignments(user.id);
-    };
+        const row = (data?.[0] ?? null) as FoodRuleRow | null;
+        setFoodRuleId(row?.id ?? null);
+      }
 
-    const handleAssign = async (e: FormEvent<HTMLFormElement>) => {
-        e.preventDefault();
-        if (!selectedMenuId) return;
-
-        setSavingAssign(true);
-        setFatalError(null);
-
-        const {
-            data: { user },
-        } = await supabase.auth.getUser();
-
-        if (!user) {
-            setFatalError("Нет авторизации");
-            setSavingAssign(false);
-            return;
-        }
-
-        const menu = menus.find((m) => m.id === selectedMenuId);
-        if (!menu) {
-            setFatalError("Меню не найдено");
-            setSavingAssign(false);
-            return;
-        }
-
-        try {
-            const start = new Date();
-            const startIso = start.toISOString().slice(0, 10);
-            const endIso =
-                typeof menu.daysCount === "number" && menu.daysCount > 0
-                    ? new Date(
-                          start.getTime() + (menu.daysCount - 1) * 86400000,
-                      )
-                          .toISOString()
-                          .slice(0, 10)
-                    : null;
-
-            // ✅ защита от дублей: не создаём вторую запись с тем же меню в тот же день
-            const { data: dupRows, error: dupErr } = await supabase
-                .from("client_menu_assignments")
-                .select("id,start_date,menu_id")
-                .eq("client_id", clientId)
-                .eq("nutritionist_id", user.id)
-                .eq("menu_id", menu.id)
-                .order("created_at", { ascending: false })
-                .limit(1);
-
-            if (!dupErr && dupRows?.length) {
-                const last = dupRows[0] as { start_date: string | null };
-                if ((last.start_date ?? null) === startIso) {
-                    setFatalError(
-                        "Это меню уже назначено сегодня. Если нужно заново — сначала удалите старое назначение.",
-                    );
-                    return;
-                }
-            }
-
-            // архивируем предыдущие active назначения
-            await supabase
-                .from("client_menu_assignments")
-                .update({ status: "archived" })
-                .eq("client_id", clientId)
-                .eq("nutritionist_id", user.id)
-                .eq("status", "active");
-
-            const { error: insErr } = await supabase
-                .from("client_menu_assignments")
-                .insert({
-                    client_id: clientId,
-                    nutritionist_id: user.id,
-                    title: menu.title,
-                    notes: newNotes.trim() || null,
-                    status: "active",
-                    start_date: startIso,
-                    end_date: endIso,
-                    menu_id: menu.id,
-                    days_count: menu.daysCount ?? null,
-                    menu_data: menu,
-                });
-
-            if (insErr) {
-                setFatalError(insErr.message);
-                return;
-            }
-
-            await reloadAssignments(user.id);
-            setSelectedMenuId("");
-            setNewNotes("");
-
-            // ✅ после назначения — прячем форму
-            setShowAssignForm(false);
-        } finally {
-            setSavingAssign(false);
-        }
-    };
-
-    const handleLabUpload = async (e: ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        setLabUploading(true);
-
-        const {
-            data: { user },
-        } = await supabase.auth.getUser();
-
-        if (!user) {
-            setLabHint("Нет авторизации");
-            setLabUploading(false);
-            return;
-        }
-
-        try {
-            const safeName = file.name.replace(/[^\w.\-()]+/g, "_");
-            const path = `${clientId}/${Date.now()}_${safeName}`;
-
-            const up = await supabase.storage
-                .from("lab_reports")
-                .upload(path, file, {
-                    cacheControl: "3600",
-                    upsert: false,
-                });
-
-            if (up.error) {
-                setLabHint(
-                    `Не удалось загрузить файл в storage: ${up.error.message}`,
-                );
-                return;
-            }
-
-            const pub = supabase.storage.from("lab_reports").getPublicUrl(path);
-            const fileUrl = pub.data.publicUrl ?? null;
-
-            const ins = await supabase.from("client_lab_reports").insert({
-                client_id: clientId,
-                nutritionist_id: user.id,
-                title: labTitle.trim() || file.name,
-                taken_at: labTakenAt || null,
-                file_path: path,
-                file_url: fileUrl,
-                ai_summary: null,
-            });
-
-            if (ins.error) {
-                setLabHint(
-                    `Файл загрузился, но запись в таблицу не создалась: ${ins.error.message}`,
-                );
-                return;
-            }
-
-            setLabTitle("");
-            setLabTakenAt("");
-            await reloadLabReports(user.id);
-        } finally {
-            setLabUploading(false);
-            e.target.value = "";
-        }
-    };
-
-    if (loading) {
-        return (
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                Загружаю данные клиента...
-            </p>
-        );
+      await reloadFoodRules(user.id);
+    } finally {
+      setFoodSaving(false);
     }
+  };
 
-    if (fatalError) {
-        return <p className="text-sm text-red-500">{fatalError}</p>;
-    }
+  if (loading) {
+    return <p className="text-sm text-zinc-500 dark:text-zinc-400">Загружаю данные клиента...</p>;
+  }
 
-    if (!basic) {
-        return (
-            <p className="text-sm text-red-500">
-                Клиент не найден или нет доступа.
-            </p>
-        );
-    }
+  if (fatalError) {
+    return <p className="text-sm text-red-500">{fatalError}</p>;
+  }
 
-    return (
-        <div className="space-y-6">
-            <header>
-                <h2 className="text-2xl font-semibold tracking-tight">
-                    Клиент: {basic.full_name ?? basic.id}
-                </h2>
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                    Цель → активный рацион → прогресс → дневник → анализы.
-                </p>
-            </header>
+  if (!basic) {
+    return <p className="text-sm text-red-500">Клиент не найден или нет доступа.</p>;
+  }
 
-            {/* РЕЗЮМЕ */}
-            <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="space-y-1">
-                        <div className="text-xs text-zinc-500">Цель</div>
-                        <div className="text-base font-semibold">
-                            {extended?.main_goal || "—"}
-                        </div>
-                        {extended?.goal_description ? (
-                            <div className="text-sm text-zinc-600 dark:text-zinc-300">
-                                {extended.goal_description}
-                            </div>
-                        ) : null}
-                    </div>
+  const compactCount = Math.min(6, Math.max(3, Math.ceil(menuAssignments.length / 2)));
+  const shownAssignments = showAllAssignments ? menuAssignments : menuAssignments.slice(0, compactCount);
 
-                    <div className="rounded-xl bg-zinc-50 px-4 py-3 text-sm dark:bg-zinc-900">
-                        <div className="text-xs text-zinc-500">
-                            Активный рацион
-                        </div>
-                        {activeAssignment ? (
-                            <div className="mt-1 space-y-1">
-                                <div className="font-medium">
-                                    {activeAssignment.title}
-                                    {activeAssignment.days_count
-                                        ? ` · ${activeAssignment.days_count} дней`
-                                        : activeAssignment.menu_data?.daysCount
-                                          ? ` · ${activeAssignment.menu_data.daysCount} дней`
-                                          : ""}
-                                </div>
-                                <div className="text-xs text-zinc-500">
-                                    {activeAssignment.start_date
-                                        ? `с ${formatDate(activeAssignment.start_date)}`
-                                        : `с ${formatDate(activeAssignment.created_at)}`}
-                                    {activeAssignment.end_date
-                                        ? ` · по ${formatDate(activeAssignment.end_date)}`
-                                        : ""}
-                                </div>
-                                {activeAssignment.menu_id ? (
-                                    <Link
-                                        href={`/nutritionist/menus/${activeAssignment.menu_id}/preview`}
-                                        className="inline-flex text-xs font-medium text-zinc-700 underline underline-offset-4 dark:text-zinc-200"
-                                    >
-                                        Открыть меню (превью)
-                                    </Link>
-                                ) : null}
-                            </div>
-                        ) : (
-                            <div className="mt-1 text-xs text-zinc-500">
-                                Пока нет назначений.
-                            </div>
-                        )}
-                    </div>
+  return (
+    <div className="space-y-6">
+      <header>
+        <h2 className="text-2xl font-semibold tracking-tight">Клиент: {basic.full_name ?? basic.id}</h2>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Цель → активный рацион → можно/нельзя → прогресс → дневник → анализы.
+        </p>
+      </header>
+
+      {/* РЕЗЮМЕ */}
+      <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <div className="text-xs text-zinc-500">Цель</div>
+            <div className="text-base font-semibold">{extended?.main_goal || "—"}</div>
+            {extended?.goal_description ? (
+              <div className="text-sm text-zinc-600 dark:text-zinc-300">{extended.goal_description}</div>
+            ) : null}
+          </div>
+
+          <div className="rounded-xl bg-zinc-50 px-4 py-3 text-sm dark:bg-zinc-900">
+            <div className="text-xs text-zinc-500">Активный рацион</div>
+            {activeAssignment ? (
+              <div className="mt-1 space-y-1">
+                <div className="font-medium">
+                  {activeAssignment.title}
+                  {activeAssignment.days_count
+                    ? ` · ${activeAssignment.days_count} дней`
+                    : activeAssignment.menu_data?.daysCount
+                      ? ` · ${activeAssignment.menu_data.daysCount} дней`
+                      : ""}
                 </div>
-
-                {goalTokens.length ? (
-                    <div className="grid gap-3 sm:grid-cols-3">
-                        {goalTokens.map((g) => (
-                            <div
-                                key={g.label}
-                                className="rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-900"
-                            >
-                                <div className="text-xs font-medium text-zinc-700 dark:text-zinc-200">
-                                    {g.label}
-                                </div>
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                    {g.items.map((x) => (
-                                        <span
-                                            key={x}
-                                            className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
-                                        >
-                                            {x}
-                                        </span>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                <div className="text-xs text-zinc-500">
+                  {activeAssignment.start_date
+                    ? `с ${formatDate(activeAssignment.start_date)}`
+                    : `с ${formatDate(activeAssignment.created_at)}`}
+                  {activeAssignment.end_date ? ` · по ${formatDate(activeAssignment.end_date)}` : ""}
+                </div>
+                {activeAssignment.menu_id ? (
+                  <Link
+                    href={`/nutritionist/menus/${activeAssignment.menu_id}/preview`}
+                    className="inline-flex text-xs font-medium text-zinc-700 underline underline-offset-4 dark:text-zinc-200"
+                  >
+                    Открыть меню (превью)
+                  </Link>
                 ) : null}
-            </section>
-
-            {/* Назначения рационов */}
-            <section className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-                <div className="flex items-start justify-between gap-3">
-                    <div>
-                        <h3 className="text-sm font-semibold">
-                            Назначение рациона по цели
-                        </h3>
-                        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                            Сверху цель, под ней — текущий активный рацион.
-                        </p>
-                    </div>
-
-                    <button
-                        type="button"
-                        onClick={() => setShowAssignForm((v) => !v)}
-                        className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                    >
-                        {showAssignForm ? "Скрыть" : "Назначить меню"}
-                    </button>
-                </div>
-
-                <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-zinc-700 dark:bg-zinc-900">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <div>
-                            <div className="text-xs text-zinc-500">Цель</div>
-                            <div className="mt-1 text-base font-semibold">
-                                {extended?.main_goal || "—"}
-                            </div>
-                            {extended?.goal_description ? (
-                                <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
-                                    {extended.goal_description}
-                                </div>
-                            ) : (
-                                <div className="mt-1 text-xs text-zinc-500">
-                                    Описание цели не заполнено.
-                                </div>
-                            )}
-                        </div>
-
-                        <div>
-                            <div className="text-xs text-zinc-500">
-                                Активный рацион
-                            </div>
-
-                            {activeAssignment ? (
-                                <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-3 text-xs dark:border-zinc-700 dark:bg-zinc-950">
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div>
-                                            <div className="font-medium">
-                                                {activeAssignment.title}
-                                                <span className="ml-2 rounded-full bg-black px-2 py-0.5 text-[10px] font-medium text-white dark:bg-zinc-100 dark:text-black">
-                                                    активный
-                                                </span>
-                                            </div>
-
-                                            <div className="mt-1 text-[11px] text-zinc-500">
-                                                {activeAssignment.start_date
-                                                    ? `с ${formatDate(activeAssignment.start_date)}`
-                                                    : `с ${formatDate(activeAssignment.created_at)}`}
-                                                {activeAssignment.end_date
-                                                    ? ` · по ${formatDate(activeAssignment.end_date)}`
-                                                    : ""}
-                                            </div>
-
-                                            {activeAssignment.menu_id ? (
-                                                <div className="mt-2">
-                                                    <Link
-                                                        href={`/nutritionist/menus/${activeAssignment.menu_id}/preview`}
-                                                        className="text-[11px] font-medium text-zinc-700 underline underline-offset-4 dark:text-zinc-200"
-                                                    >
-                                                        Открыть меню (превью)
-                                                    </Link>
-                                                </div>
-                                            ) : null}
-
-                                            {activeAssignment.notes ? (
-                                                <div className="mt-2 text-[11px] text-zinc-500">
-                                                    {activeAssignment.notes}
-                                                </div>
-                                            ) : null}
-                                        </div>
-
-                                        <div className="flex shrink-0 flex-col gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    setAssignmentStatus(
-                                                        activeAssignment.id,
-                                                        "archived",
-                                                    )
-                                                }
-                                                className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-[11px] text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                                            >
-                                                В архив
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    deleteAssignment(
-                                                        activeAssignment.id,
-                                                    )
-                                                }
-                                                className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-[11px] text-red-600 hover:bg-red-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-red-400 dark:hover:bg-zinc-900"
-                                            >
-                                                Удалить
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="mt-2 rounded-xl border border-dashed border-zinc-300 bg-white/70 p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950/50 dark:text-zinc-300">
-                                    Активный рацион не выбран.
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* ✅ сворачиваемая форма назначения */}
-                {showAssignForm ? (
-                    <form
-                        onSubmit={handleAssign}
-                        className="grid gap-2 rounded-2xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-                    >
-                        <label className="flex flex-col gap-1">
-                            Меню для назначения
-                            <select
-                                value={selectedMenuId}
-                                onChange={(e) =>
-                                    setSelectedMenuId(e.target.value)
-                                }
-                                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
-                            >
-                                <option value="">— Выберите меню —</option>
-                                {menus.map((m) => (
-                                    <option key={m.id} value={m.id}>
-                                        {m.title} ({m.daysCount ?? 0} дней)
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-
-                        <label className="flex flex-col gap-1">
-                            Комментарий (опционально)
-                            <textarea
-                                rows={1}
-                                value={newNotes}
-                                onChange={(e) => setNewNotes(e.target.value)}
-                                placeholder="Коротко: особенности, рекомендации..."
-                                className="min-h-[44px] rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-                            />
-                        </label>
-
-                        <div className="flex items-center gap-2">
-                            <button
-                                type="submit"
-                                disabled={savingAssign || !selectedMenuId}
-                                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
-                            >
-                                {savingAssign ? "Назначаю..." : "Назначить"}
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() => setShowAssignForm(false)}
-                                className="rounded-full border border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                            >
-                                Отмена
-                            </button>
-                        </div>
-                    </form>
-                ) : null}
-
-                {/* История назначений (только меню) */}
-                {menuAssignments.length === 0 ? (
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                        Пока нет назначенных рационов.
-                    </p>
-                ) : (
-                    <div className="space-y-2 text-sm">
-                        {menuAssignments.map((a) => {
-                            const isActive =
-                                a.status === "active" ||
-                                (a.status == null &&
-                                    a.id === activeAssignment?.id);
-
-                            return (
-                                <div
-                                    key={a.id}
-                                    className={
-                                        isActive
-                                            ? "rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3 text-xs ring-2 ring-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:ring-zinc-100/10"
-                                            : "rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3 text-xs dark:border-zinc-700 dark:bg-zinc-900"
-                                    }
-                                >
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div>
-                                            <div className="font-medium">
-                                                {a.title}
-                                                {a.days_count
-                                                    ? ` · ${a.days_count} дней`
-                                                    : a.menu_data?.daysCount
-                                                      ? ` · ${a.menu_data.daysCount} дней`
-                                                      : null}
-                                                {isActive ? (
-                                                    <span className="ml-2 rounded-full bg-black px-2 py-0.5 text-[10px] font-medium text-white dark:bg-zinc-100 dark:text-black">
-                                                        активный
-                                                    </span>
-                                                ) : null}
-                                            </div>
-
-                                            <div className="mt-1 text-[11px] text-zinc-500">
-                                                {a.start_date
-                                                    ? `с ${formatDate(a.start_date)}`
-                                                    : `с ${formatDate(a.created_at)}`}
-                                                {a.end_date
-                                                    ? ` · по ${formatDate(a.end_date)}`
-                                                    : ""}
-                                            </div>
-
-                                            {a.notes ? (
-                                                <p className="mt-2 text-[11px] text-zinc-600 dark:text-zinc-300">
-                                                    {a.notes}
-                                                </p>
-                                            ) : null}
-
-                                            {a.menu_id ? (
-                                                <div className="mt-2">
-                                                    <Link
-                                                        href={`/nutritionist/menus/${a.menu_id}/preview`}
-                                                        className="text-[11px] font-medium text-zinc-700 underline underline-offset-4 dark:text-zinc-200"
-                                                    >
-                                                        Открыть меню (превью)
-                                                    </Link>
-                                                </div>
-                                            ) : null}
-                                        </div>
-
-                                        <div className="flex flex-col gap-2">
-                                            {!isActive ? (
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        setAssignmentStatus(
-                                                            a.id,
-                                                            "active",
-                                                        )
-                                                    }
-                                                    className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-[11px] text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                                                >
-                                                    Сделать активным
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        setAssignmentStatus(
-                                                            a.id,
-                                                            "archived",
-                                                        )
-                                                    }
-                                                    className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-[11px] text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                                                >
-                                                    В архив
-                                                </button>
-                                            )}
-
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    deleteAssignment(a.id)
-                                                }
-                                                className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-[11px] text-red-600 hover:bg-red-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-red-400 dark:hover:bg-zinc-900"
-                                            >
-                                                Удалить
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-
-                {hiddenLegacyCount ? (
-                    <div className="text-[11px] text-zinc-500">
-                        Скрыто устаревших записей (без привязки к меню):{" "}
-                        {hiddenLegacyCount}
-                    </div>
-                ) : null}
-            </section>
-
-            {/* Дневник */}
-            <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <h3 className="text-sm font-semibold">
-                        Дневник клиента (вес / энергия / настроение)
-                    </h3>
-
-                    <div className="flex items-center gap-2 text-xs">
-                        <span className="text-zinc-500">Период:</span>
-                        {(["7", "30", "all"] as const).map((k) => (
-                            <button
-                                key={k}
-                                type="button"
-                                onClick={() => setJournalRange(k)}
-                                className={
-                                    journalRange === k
-                                        ? "rounded-full bg-black px-3 py-1 text-xs font-medium text-white dark:bg-zinc-100 dark:text-black"
-                                        : "rounded-full border border-zinc-300 px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                                }
-                            >
-                                {k === "7"
-                                    ? "7 дней"
-                                    : k === "30"
-                                      ? "30 дней"
-                                      : "всё"}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* ✅ короткое резюме прогресса */}
-                <div className="grid gap-3 sm:grid-cols-4">
-                    <div className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
-                        <div className="text-zinc-500">Записей</div>
-                        <div className="mt-1 text-sm font-semibold">
-                            {progress.entriesCount}
-                        </div>
-                    </div>
-                    <div className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
-                        <div className="text-zinc-500">Вес (Δ)</div>
-                        <div className="mt-1 text-sm font-semibold">
-                            {progress.deltaWeight == null
-                                ? "—"
-                                : `${progress.deltaWeight > 0 ? "+" : ""}${Math.round(progress.deltaWeight * 10) / 10} кг`}
-                        </div>
-                        <div className="mt-1 text-[11px] text-zinc-500">
-                            {progress.startWeight != null &&
-                            progress.lastWeight != null
-                                ? `${Math.round(progress.startWeight * 10) / 10} → ${Math.round(progress.lastWeight * 10) / 10}`
-                                : ""}
-                        </div>
-                    </div>
-                    <div className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
-                        <div className="text-zinc-500">Энергия (ср.)</div>
-                        <div className="mt-1 text-sm font-semibold">
-                            {progress.avgEnergy ?? "—"}
-                        </div>
-                    </div>
-                    <div className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
-                        <div className="text-zinc-500">Настроение (ср.)</div>
-                        <div className="mt-1 text-sm font-semibold">
-                            {progress.avgMood ?? "—"}
-                        </div>
-                    </div>
-                </div>
-
-                {filteredJournal.length === 0 ? (
-                    <p className="text-xs text-zinc-500">
-                        За выбранный период нет записей.
-                    </p>
-                ) : (
-                    <>
-                        {weightPath ? (
-                            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-900">
-                                <div className="mb-2 flex items-center justify-between text-xs text-zinc-500">
-                                    <span>Вес (мини-график)</span>
-                                    <span>
-                                        {Math.round(weightPath.minW * 10) /
-                                            10}{" "}
-                                        —{" "}
-                                        {Math.round(weightPath.maxW * 10) /
-                                            10}{" "}
-                                        кг
-                                    </span>
-                                </div>
-                                <svg
-                                    width={weightPath.W}
-                                    height={weightPath.H}
-                                    className="block"
-                                >
-                                    <path
-                                        d={weightPath.d}
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth={2}
-                                    />
-                                </svg>
-                                <div className="mt-2 text-[11px] text-zinc-500">
-                                    * простой график, чтобы нутрициолог видел
-                                    динамику.
-                                </div>
-                            </div>
-                        ) : null}
-
-                        <div className="max-h-64 overflow-auto rounded-lg border border-zinc-200 text-xs dark:border-zinc-700">
-                            <table className="min-w-full border-collapse">
-                                <thead className="bg-zinc-50 dark:bg-zinc-900">
-                                    <tr>
-                                        <th className="px-2 py-1 text-left font-medium">
-                                            Дата
-                                        </th>
-                                        <th className="px-2 py-1 text-left font-medium">
-                                            Вес
-                                        </th>
-                                        <th className="px-2 py-1 text-left font-medium">
-                                            Энергия
-                                        </th>
-                                        <th className="px-2 py-1 text-left font-medium">
-                                            Настроение
-                                        </th>
-                                        <th className="px-2 py-1 text-left font-medium">
-                                            Заметки
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {filteredJournal.map((e) => (
-                                        <tr
-                                            key={e.id}
-                                            className="border-t border-zinc-100 dark:border-zinc-800"
-                                        >
-                                            <td className="px-2 py-1">
-                                                {new Date(
-                                                    e.entry_date,
-                                                ).toLocaleDateString()}
-                                            </td>
-                                            <td className="px-2 py-1">
-                                                {e.weight_kg ?? "—"}
-                                            </td>
-                                            <td className="px-2 py-1">
-                                                {e.energy_level ?? "—"}
-                                            </td>
-                                            <td className="px-2 py-1">
-                                                {e.mood ?? "—"}
-                                            </td>
-                                            <td className="px-2 py-1">
-                                                {e.notes ?? ""}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </>
-                )}
-            </section>
-
-            {/* Анализы */}
-            <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-                <h3 className="text-sm font-semibold">
-                    Анализы (файлы + расшифровка)
-                </h3>
-
-                {labHint ? (
-                    <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                        {labHint}
-                    </div>
-                ) : null}
-
-                <div className="grid gap-3 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900 sm:grid-cols-3">
-                    <label className="flex flex-col gap-1 text-xs">
-                        Название (например, “Биохимия”)
-                        <input
-                            value={labTitle}
-                            onChange={(e) => setLabTitle(e.target.value)}
-                            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
-                            placeholder="ОАК / Биохимия / Витамин D..."
-                        />
-                    </label>
-
-                    <label className="flex flex-col gap-1 text-xs">
-                        Дата сдачи
-                        <input
-                            type="date"
-                            value={labTakenAt}
-                            onChange={(e) => setLabTakenAt(e.target.value)}
-                            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
-                        />
-                    </label>
-
-                    <label className="flex flex-col gap-1 text-xs">
-                        Файл (PDF/JPG/PNG)
-                        <input
-                            type="file"
-                            accept=".pdf,image/*"
-                            onChange={handleLabUpload}
-                            disabled={labUploading}
-                            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-950"
-                        />
-                    </label>
-
-                    <div className="sm:col-span-3 text-[11px] text-zinc-500">
-                        ИИ-расшифровку подключим следующим шагом (лучше
-                        сохранять результат в БД, чтобы не считать по кругу).
-                    </div>
-                </div>
-
-                {labReports.length === 0 ? (
-                    <p className="text-xs text-zinc-500">
-                        Пока нет загруженных анализов.
-                    </p>
-                ) : (
-                    <div className="space-y-2">
-                        {labReports.map((r) => (
-                            <div
-                                key={r.id}
-                                className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3 text-xs dark:border-zinc-700 dark:bg-zinc-900"
-                            >
-                                <div className="flex items-start justify-between gap-3">
-                                    <div>
-                                        <div className="font-medium">
-                                            {r.title ?? "Анализ"}
-                                        </div>
-                                        <div className="mt-1 text-[11px] text-zinc-500">
-                                            дата: {formatDate(r.taken_at)} ·
-                                            загружено:{" "}
-                                            {formatDate(r.created_at)}
-                                        </div>
-                                        {r.file_url ? (
-                                            <a
-                                                href={r.file_url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="mt-2 inline-flex text-[11px] font-medium text-zinc-700 underline underline-offset-4 dark:text-zinc-200"
-                                            >
-                                                Открыть файл
-                                            </a>
-                                        ) : null}
-                                        {r.ai_summary ? (
-                                            <div className="mt-2 rounded-lg bg-white p-2 text-[11px] text-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-                                                {r.ai_summary}
-                                            </div>
-                                        ) : null}
-                                    </div>
-
-                                    <button
-                                        type="button"
-                                        disabled
-                                        className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-[11px] text-zinc-400 dark:border-zinc-700 dark:bg-zinc-950"
-                                        title="Подключим после добавления AI-роута"
-                                    >
-                                        Расшифровать ИИ (скоро)
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </section>
+              </div>
+            ) : (
+              <div className="mt-1 text-xs text-zinc-500">Пока нет назначений.</div>
+            )}
+          </div>
         </div>
-    );
+
+        {goalTokens.length ? (
+          <div className="grid gap-3 sm:grid-cols-3">
+            {goalTokens.map((g) => (
+              <div key={g.label} className="rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-900">
+                <div className="text-xs font-medium text-zinc-700 dark:text-zinc-200">{g.label}</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {g.items.map((x) => (
+                    <span
+                      key={x}
+                      className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
+                    >
+                      {x}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </section>
+
+      {/* Назначение рациона по цели + Можно/Нельзя (в одном блоке, справа) */}
+      <section className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold">Назначение рациона по цели</h3>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Слева — цель и рацион (компактно), справа — продукты «можно/нельзя».
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowAssignForm((v) => !v)}
+            className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          >
+            {showAssignForm ? "Скрыть" : "Назначить меню"}
+          </button>
+        </div>
+
+        {/* 3 колонки: цель / рацион / можно-нельзя */}
+        <div className="grid gap-3 lg:grid-cols-3">
+          {/* Цель */}
+          <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="text-xs text-zinc-500">Цель</div>
+            <div className="mt-1 text-base font-semibold">{extended?.main_goal || "—"}</div>
+            {extended?.goal_description ? (
+              <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">{extended.goal_description}</div>
+            ) : (
+              <div className="mt-1 text-xs text-zinc-500">Описание цели не заполнено.</div>
+            )}
+          </div>
+
+          {/* Рацион (сжато) */}
+          <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="text-xs text-zinc-500">Активный рацион</div>
+
+            {activeAssignment ? (
+              <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-3 text-xs dark:border-zinc-700 dark:bg-zinc-950">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium">
+                      {activeAssignment.title}
+                      <span className="ml-2 rounded-full bg-black px-2 py-0.5 text-[10px] font-medium text-white dark:bg-zinc-100 dark:text-black">
+                        активный
+                      </span>
+                    </div>
+
+                    <div className="mt-1 text-[11px] text-zinc-500">
+                      {activeAssignment.start_date
+                        ? `с ${formatDate(activeAssignment.start_date)}`
+                        : `с ${formatDate(activeAssignment.created_at)}`}
+                      {activeAssignment.end_date ? ` · по ${formatDate(activeAssignment.end_date)}` : ""}
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-3">
+                      {activeAssignment.menu_id ? (
+                        <Link
+                          href={`/nutritionist/menus/${activeAssignment.menu_id}/preview`}
+                          className="text-[11px] font-medium text-zinc-700 underline underline-offset-4 dark:text-zinc-200"
+                        >
+                          Открыть меню
+                        </Link>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        onClick={() => setAssignmentStatus(activeAssignment.id, "archived")}
+                        className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-[11px] text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                      >
+                        В архив
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => deleteAssignment(activeAssignment.id)}
+                        className="rounded-full border border-red-200 bg-white px-3 py-1.5 text-[11px] text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:bg-zinc-950 dark:text-red-300 dark:hover:bg-red-950/30"
+                      >
+                        Удалить
+                      </button>
+                    </div>
+
+                    {activeAssignment.notes ? (
+                      <div className="mt-2 text-[11px] text-zinc-500">{activeAssignment.notes}</div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-2 rounded-xl border border-dashed border-zinc-300 bg-white/70 p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950/50 dark:text-zinc-300">
+                Активный рацион не выбран.
+              </div>
+            )}
+
+            <div className="mt-3 text-[11px] text-zinc-500">
+              История ниже (по умолчанию сокращена примерно в 2 раза).
+            </div>
+          </div>
+
+          {/* Можно/Нельзя */}
+          <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs text-zinc-500">Продукты по цели</div>
+                <div className="mt-1 text-sm font-semibold">Можно / Нельзя</div>
+              </div>
+
+              <button
+                type="button"
+                onClick={saveFoodRules}
+                disabled={foodSaving || !!foodHint}
+                className="rounded-full bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                title={foodHint ? "Нужно настроить таблицу client_food_rules и RLS" : ""}
+              >
+                {foodSaving ? "Сохраняю..." : "Сохранить"}
+              </button>
+            </div>
+
+            {foodHint ? (
+              <div className="mt-3 rounded-xl border border-dashed border-zinc-300 bg-white/70 p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950/50 dark:text-zinc-300">
+                {foodHint}
+              </div>
+            ) : null}
+
+            <div className="mt-3 space-y-2">
+              <label className="block text-xs">
+                <div className="mb-1 text-zinc-500">Можно</div>
+                <textarea
+                  rows={4}
+                  value={foodAllowed}
+                  onChange={(e) => setFoodAllowed(e.target.value)}
+                  placeholder="Напр.: курица, рыба, овощи, рис, гречка..."
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+                />
+              </label>
+
+              <label className="block text-xs">
+                <div className="mb-1 text-zinc-500">Нельзя</div>
+                <textarea
+                  rows={4}
+                  value={foodBanned}
+                  onChange={(e) => setFoodBanned(e.target.value)}
+                  placeholder="Напр.: сахар, газировка, фастфуд..."
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+                />
+              </label>
+
+              <label className="block text-xs">
+                <div className="mb-1 text-zinc-500">Комментарий (опц.)</div>
+                <input
+                  value={foodNotes}
+                  onChange={(e) => setFoodNotes(e.target.value)}
+                  placeholder="Почему так / на какой срок / чем заменить…"
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+                />
+              </label>
+
+              {(foodAllowed.trim() || foodBanned.trim()) && !foodHint ? (
+                <div className="pt-2 text-[11px] text-zinc-500">
+                  Подсказка: можно вводить через запятую или с новой строки.
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        {/* форма назначения (компактная) */}
+        {showAssignForm ? (
+          <form
+            onSubmit={handleAssign}
+            className="grid gap-2 rounded-2xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+          >
+            <label className="flex flex-col gap-1">
+              Меню для назначения
+              <select
+                value={selectedMenuId}
+                onChange={(e) => setSelectedMenuId(e.target.value)}
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+              >
+                <option value="">— Выберите меню —</option>
+                {menus.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.title} ({m.daysCount ?? 0} дней)
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-1">
+              Комментарий (опционально)
+              <textarea
+                rows={1}
+                value={newNotes}
+                onChange={(e) => setNewNotes(e.target.value)}
+                placeholder="Коротко: особенности, рекомендации..."
+                className="min-h-[44px] rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+              />
+            </label>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={savingAssign || !selectedMenuId}
+                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+              >
+                {savingAssign ? "Назначаю..." : "Назначить"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowAssignForm(false)}
+                className="rounded-full border border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              >
+                Отмена
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {/* История назначений (сокращена) */}
+        {menuAssignments.length === 0 ? (
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">Пока нет назначенных рационов.</p>
+        ) : (
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-semibold">История назначений</div>
+              {menuAssignments.length > compactCount ? (
+                <button
+                  type="button"
+                  onClick={() => setShowAllAssignments((v) => !v)}
+                  className="rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                >
+                  {showAllAssignments ? "Свернуть" : `Показать все (${menuAssignments.length})`}
+                </button>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              {shownAssignments.map((a) => {
+                const isActive = a.status === "active" || (a.status == null && a.id === activeAssignment?.id);
+
+                return (
+                  <div
+                    key={a.id}
+                    className={
+                      isActive
+                        ? "rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3 text-xs ring-2 ring-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:ring-zinc-100/10"
+                        : "rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                    }
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium">
+                          {a.title}
+                          {a.days_count
+                            ? ` · ${a.days_count} дней`
+                            : a.menu_data?.daysCount
+                              ? ` · ${a.menu_data.daysCount} дней`
+                              : null}
+                          {isActive ? (
+                            <span className="ml-2 rounded-full bg-black px-2 py-0.5 text-[10px] font-medium text-white dark:bg-zinc-100 dark:text-black">
+                              активный
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-1 text-[11px] text-zinc-500">
+                          {a.start_date ? `с ${formatDate(a.start_date)}` : `с ${formatDate(a.created_at)}`}
+                          {a.end_date ? ` · по ${formatDate(a.end_date)}` : ""}
+                        </div>
+
+                        <div className="mt-2 flex flex-wrap items-center gap-3">
+                          {a.menu_id ? (
+                            <Link
+                              href={`/nutritionist/menus/${a.menu_id}/preview`}
+                              className="text-[11px] font-medium text-zinc-700 underline underline-offset-4 dark:text-zinc-200"
+                            >
+                              Открыть меню
+                            </Link>
+                          ) : null}
+
+                          <button
+                            type="button"
+                            onClick={() => deleteAssignment(a.id)}
+                            className="rounded-full border border-red-200 bg-white px-3 py-1 text-[11px] text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:bg-zinc-950 dark:text-red-300 dark:hover:bg-red-950/30"
+                          >
+                            Удалить
+                          </button>
+                        </div>
+
+                        {a.notes ? (
+                          <p className="mt-2 text-[11px] text-zinc-600 dark:text-zinc-300">{a.notes}</p>
+                        ) : null}
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        {!isActive ? (
+                          <button
+                            type="button"
+                            onClick={() => setAssignmentStatus(a.id, "active")}
+                            className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-[11px] text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                          >
+                            Сделать активным
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {hiddenLegacyCount ? (
+          <div className="text-[11px] text-zinc-500">
+            Скрыто устаревших записей (без привязки к меню): {hiddenLegacyCount}
+          </div>
+        ) : null}
+      </section>
+
+      {/* Дневник */}
+      <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="text-sm font-semibold">Дневник клиента (вес / энергия / настроение)</h3>
+
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-zinc-500">Период:</span>
+            {(["7", "30", "all"] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setJournalRange(k)}
+                className={
+                  journalRange === k
+                    ? "rounded-full bg-black px-3 py-1 text-xs font-medium text-white dark:bg-zinc-100 dark:text-black"
+                    : "rounded-full border border-zinc-300 px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                }
+              >
+                {k === "7" ? "7 дней" : k === "30" ? "30 дней" : "всё"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-4">
+          <div className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
+            <div className="text-zinc-500">Записей</div>
+            <div className="mt-1 text-sm font-semibold">{progress.entriesCount}</div>
+          </div>
+          <div className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
+            <div className="text-zinc-500">Вес (Δ)</div>
+            <div className="mt-1 text-sm font-semibold">
+              {progress.deltaWeight == null
+                ? "—"
+                : `${progress.deltaWeight > 0 ? "+" : ""}${Math.round(progress.deltaWeight * 10) / 10} кг`}
+            </div>
+            <div className="mt-1 text-[11px] text-zinc-500">
+              {progress.startWeight != null && progress.lastWeight != null
+                ? `${Math.round(progress.startWeight * 10) / 10} → ${Math.round(progress.lastWeight * 10) / 10}`
+                : ""}
+            </div>
+          </div>
+          <div className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
+            <div className="text-zinc-500">Энергия (ср.)</div>
+            <div className="mt-1 text-sm font-semibold">{progress.avgEnergy ?? "—"}</div>
+          </div>
+          <div className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
+            <div className="text-zinc-500">Настроение (ср.)</div>
+            <div className="mt-1 text-sm font-semibold">{progress.avgMood ?? "—"}</div>
+          </div>
+        </div>
+
+        {filteredJournal.length === 0 ? (
+          <p className="text-xs text-zinc-500">За выбранный период нет записей.</p>
+        ) : (
+          <>
+            {weightPath ? (
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-900">
+                <div className="mb-2 flex items-center justify-between text-xs text-zinc-500">
+                  <span>Вес (мини-график)</span>
+                  <span>
+                    {Math.round(weightPath.minW * 10) / 10} — {Math.round(weightPath.maxW * 10) / 10} кг
+                  </span>
+                </div>
+                <svg width={weightPath.W} height={weightPath.H} className="block">
+                  <path d={weightPath.d} fill="none" stroke="currentColor" strokeWidth={2} />
+                </svg>
+                <div className="mt-2 text-[11px] text-zinc-500">
+                  * простой график, чтобы нутрициолог видел динамику.
+                </div>
+              </div>
+            ) : null}
+
+            <div className="max-h-64 overflow-auto rounded-lg border border-zinc-200 text-xs dark:border-zinc-700">
+              <table className="min-w-full border-collapse">
+                <thead className="bg-zinc-50 dark:bg-zinc-900">
+                  <tr>
+                    <th className="px-2 py-1 text-left font-medium">Дата</th>
+                    <th className="px-2 py-1 text-left font-medium">Вес</th>
+                    <th className="px-2 py-1 text-left font-medium">Энергия</th>
+                    <th className="px-2 py-1 text-left font-medium">Настроение</th>
+                    <th className="px-2 py-1 text-left font-medium">Заметки</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredJournal.map((e) => (
+                    <tr key={e.id} className="border-t border-zinc-100 dark:border-zinc-800">
+                      <td className="px-2 py-1">{new Date(e.entry_date).toLocaleDateString()}</td>
+                      <td className="px-2 py-1">{e.weight_kg ?? "—"}</td>
+                      <td className="px-2 py-1">{e.energy_level ?? "—"}</td>
+                      <td className="px-2 py-1">{e.mood ?? "—"}</td>
+                      <td className="px-2 py-1">{e.notes ?? ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* Анализы */}
+      <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <h3 className="text-sm font-semibold">Анализы (файлы + расшифровка)</h3>
+
+        {labHint ? (
+          <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+            {labHint}
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900 sm:grid-cols-3">
+          <label className="flex flex-col gap-1 text-xs">
+            Название (например, “Биохимия”)
+            <input
+              value={labTitle}
+              onChange={(e) => setLabTitle(e.target.value)}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+              placeholder="ОАК / Биохимия / Витамин D..."
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs">
+            Дата сдачи
+            <input
+              type="date"
+              value={labTakenAt}
+              onChange={(e) => setLabTakenAt(e.target.value)}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs">
+            Файл (PDF/JPG/PNG)
+            <input
+              type="file"
+              accept=".pdf,image/*"
+              onChange={handleLabUpload}
+              disabled={labUploading}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-950"
+            />
+          </label>
+
+          <div className="sm:col-span-3 text-[11px] text-zinc-500">
+            ИИ-расшифровку подключим следующим шагом (лучше сохранять результат в БД, чтобы не считать по кругу).
+          </div>
+        </div>
+
+        {labReports.length === 0 ? (
+          <p className="text-xs text-zinc-500">Пока нет загруженных анализов.</p>
+        ) : (
+          <div className="space-y-2">
+            {labReports.map((r) => (
+              <div
+                key={r.id}
+                className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{r.title ?? "Анализ"}</div>
+                    <div className="mt-1 text-[11px] text-zinc-500">
+                      дата: {formatDate(r.taken_at)} · загружено: {formatDate(r.created_at)}
+                    </div>
+                    {r.file_url ? (
+                      <a
+                        href={r.file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex text-[11px] font-medium text-zinc-700 underline underline-offset-4 dark:text-zinc-200"
+                      >
+                        Открыть файл
+                      </a>
+                    ) : null}
+                    {r.ai_summary ? (
+                      <div className="mt-2 rounded-lg bg-white p-2 text-[11px] text-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+                        {r.ai_summary}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled
+                    className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-[11px] text-zinc-400 dark:border-zinc-700 dark:bg-zinc-950"
+                    title="Подключим после добавления AI-роута"
+                  >
+                    Расшифровать ИИ (скоро)
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
 }
