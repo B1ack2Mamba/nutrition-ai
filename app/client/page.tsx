@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, ChangeEvent } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 type BasicProfile = {
@@ -26,17 +26,25 @@ type MenuAssignment = {
     created_at: string;
     menu_id: string | null;
     days_count: number | null;
-    menu_data: unknown | null; // ✅ без any
+    menu_data: unknown | null;
 };
 
 type FoodRulesRow = {
     id: string;
     client_id: string;
     nutritionist_id: string | null;
-    // ✅ важно: может быть string / string[] / jsonb / null
     allowed_products: unknown;
     banned_products: unknown;
     notes: string | null;
+    created_at: string;
+};
+
+type LabReport = {
+    id: string;
+    client_id: string;
+    title: string | null;
+    taken_at: string | null;
+    file_path: string;
     created_at: string;
 };
 
@@ -47,15 +55,6 @@ function formatDate(d: string | null | undefined): string {
     return dt.toLocaleDateString();
 }
 
-/**
- * Принимает что угодно:
- * - string
- * - string[]
- * - jsonb массив
- * - null
- * - number/bool
- * И возвращает список токенов.
- */
 function splitList(value: unknown): string[] {
     const out: string[] = [];
 
@@ -79,13 +78,10 @@ function splitList(value: unknown): string[] {
             out.push(String(v));
             return;
         }
-
-        // объект игнорируем (чтобы не печатать [object Object])
     };
 
     add(value);
 
-    // дедуп + лимит
     return Array.from(new Set(out.map((x) => x.trim()).filter(Boolean))).slice(0, 60);
 }
 
@@ -243,6 +239,11 @@ function buildMenuView(menu: unknown): DayView[] {
     });
 }
 
+function isAuthRefreshTokenErrorMessage(msg: string) {
+    const m = msg.toLowerCase();
+    return m.includes("refresh token") || m.includes("invalid refresh token");
+}
+
 export default function ClientPage() {
     const [loading, setLoading] = useState(true);
     const [fatalError, setFatalError] = useState<string | null>(null);
@@ -253,6 +254,14 @@ export default function ClientPage() {
     const [assignments, setAssignments] = useState<MenuAssignment[]>([]);
     const [currentFood, setCurrentFood] = useState<FoodRulesRow | null>(null);
     const [foodHint, setFoodHint] = useState<string | null>(null);
+
+    // Анализы клиента
+    const [labReports, setLabReports] = useState<LabReport[]>([]);
+    const [labHint, setLabHint] = useState<string | null>(null);
+    const [labBusy, setLabBusy] = useState(false);
+    const [labTitle, setLabTitle] = useState("");
+    const [labTakenAt, setLabTakenAt] = useState<string>("");
+    const [labFile, setLabFile] = useState<File | null>(null);
 
     const reloadFood = useCallback(async (clientId: string) => {
         const { data: frRows, error: frErr } = await supabase
@@ -272,74 +281,211 @@ export default function ClientPage() {
         setCurrentFood((frRows?.[0] as FoodRulesRow | undefined) ?? null);
     }, []);
 
+    const reloadLabReports = useCallback(async (clientId: string) => {
+        const { data, error } = await supabase
+            .from("client_lab_reports")
+            .select("*")
+            .eq("client_id", clientId)
+            .order("taken_at", { ascending: false })
+            .order("created_at", { ascending: false });
+
+        if (error) {
+            setLabHint(
+                "Секция анализов не настроена (нет таблицы client_lab_reports и/или RLS).",
+            );
+            setLabReports([]);
+            return;
+        }
+
+        setLabHint(null);
+        setLabReports((data ?? []) as LabReport[]);
+    }, []);
+
+    const openLabFile = useCallback(async (filePath: string) => {
+        // bucket может быть приватный → открываем через signed URL
+        const { data, error } = await supabase.storage
+            .from("lab_reports")
+            .createSignedUrl(filePath, 60 * 10); // 10 минут
+
+        if (error || !data?.signedUrl) {
+            setLabHint(`Не удалось открыть файл: ${error?.message ?? "no signedUrl"}`);
+            return;
+        }
+
+        window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    }, []);
+
+    const onPickLabFile = (e: ChangeEvent<HTMLInputElement>) => {
+        const f = e.target.files?.[0] ?? null;
+        setLabFile(f);
+    };
+
+    const uploadLab = useCallback(async () => {
+        if (!basic?.id) return;
+        if (!labFile) {
+            setLabHint("Выбери файл.");
+            return;
+        }
+
+        setLabBusy(true);
+        setLabHint(null);
+
+        try {
+            const safeName = labFile.name.replace(/[^\w.\-()]+/g, "_");
+            const path = `${basic.id}/${Date.now()}_${safeName}`;
+
+            const up = await supabase.storage.from("lab_reports").upload(path, labFile, {
+                cacheControl: "3600",
+                upsert: false,
+            });
+
+            if (up.error) {
+                setLabHint(`Не удалось загрузить файл в storage: ${up.error.message}`);
+                return;
+            }
+
+            const ins = await supabase.from("client_lab_reports").insert({
+                client_id: basic.id,
+                title: labTitle.trim() || labFile.name,
+                taken_at: labTakenAt || null,
+                file_path: path,
+            });
+
+            if (ins.error) {
+                setLabHint(`Файл загрузился, но запись в таблицу не создалась: ${ins.error.message}`);
+                return;
+            }
+
+            setLabTitle("");
+            setLabTakenAt("");
+            setLabFile(null);
+            await reloadLabReports(basic.id);
+        } finally {
+            setLabBusy(false);
+        }
+    }, [basic?.id, labFile, labTitle, labTakenAt, reloadLabReports]);
+
+    const deleteLab = useCallback(
+        async (r: LabReport) => {
+            if (!basic?.id) return;
+
+            const ok = confirm("Удалить этот анализ? Файл тоже будет удалён.");
+            if (!ok) return;
+
+            setLabBusy(true);
+            setLabHint(null);
+
+            try {
+                const delRow = await supabase
+                    .from("client_lab_reports")
+                    .delete()
+                    .eq("id", r.id)
+                    .eq("client_id", basic.id);
+
+                if (delRow.error) {
+                    setLabHint(`Не удалось удалить запись: ${delRow.error.message}`);
+                    return;
+                }
+
+                const delFile = await supabase.storage.from("lab_reports").remove([r.file_path]);
+                if (delFile.error) {
+                    // запись удалили, но файл не смогли — лучше показать, чтобы ты понял что storage policy не настроена
+                    setLabHint(`Запись удалена, но файл не удалён (storage RLS): ${delFile.error.message}`);
+                }
+
+                await reloadLabReports(basic.id);
+            } finally {
+                setLabBusy(false);
+            }
+        },
+        [basic?.id, reloadLabReports],
+    );
+
     useEffect(() => {
         const load = async () => {
             setLoading(true);
             setFatalError(null);
 
-            const {
-                data: { user },
-            } = await supabase.auth.getUser();
+            try {
+                const { data, error } = await supabase.auth.getUser();
+                if (error) {
+                    if (isAuthRefreshTokenErrorMessage(error.message)) {
+                        await supabase.auth.signOut();
+                        setFatalError("Сессия истекла. Войдите снова.");
+                        setLoading(false);
+                        return;
+                    }
+                    setFatalError(error.message);
+                    setLoading(false);
+                    return;
+                }
 
-            if (!user) {
-                setFatalError("Нет авторизации");
+                const user = data.user;
+                if (!user) {
+                    setFatalError("Нет авторизации");
+                    setLoading(false);
+                    return;
+                }
+
+                // базовый профиль
+                const { data: prof, error: profErr } = await supabase
+                    .from("profiles")
+                    .select("id, full_name")
+                    .eq("id", user.id)
+                    .single();
+
+                if (profErr) {
+                    setFatalError(profErr.message);
+                    setLoading(false);
+                    return;
+                }
+                setBasic(prof as BasicProfile);
+
+                // цель
+                const { data: extRows } = await supabase
+                    .from("client_profiles")
+                    .select("user_id, main_goal, goal_description")
+                    .eq("user_id", user.id)
+                    .limit(1);
+
+                if (extRows && extRows.length > 0) setExtended(extRows[0] as ExtendedProfile);
+                else setExtended(null);
+
+                // назначения меню
+                const { data: assRows, error: assErr } = await supabase
+                    .from("client_menu_assignments")
+                    .select("*")
+                    .eq("client_id", user.id)
+                    .order("created_at", { ascending: false });
+
+                if (assErr) {
+                    setFatalError(assErr.message);
+                    setLoading(false);
+                    return;
+                }
+                setAssignments((assRows ?? []) as MenuAssignment[]);
+
+                // продукты
+                await reloadFood(user.id);
+
+                // анализы
+                await reloadLabReports(user.id);
+
                 setLoading(false);
-                return;
-            }
-
-            // базовый профиль
-            const { data: prof, error: profErr } = await supabase
-                .from("profiles")
-                .select("id, full_name")
-                .eq("id", user.id)
-                .single();
-
-            if (profErr) {
-                setFatalError(profErr.message);
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                setFatalError(msg);
                 setLoading(false);
-                return;
             }
-            setBasic(prof as BasicProfile);
-
-            // цель
-            const { data: extRows } = await supabase
-                .from("client_profiles")
-                .select("user_id, main_goal, goal_description")
-                .eq("user_id", user.id)
-                .limit(1);
-
-            if (extRows && extRows.length > 0) setExtended(extRows[0] as ExtendedProfile);
-            else setExtended(null);
-
-            // назначения меню
-            const { data: assRows, error: assErr } = await supabase
-                .from("client_menu_assignments")
-                .select("*")
-                .eq("client_id", user.id)
-                .order("created_at", { ascending: false });
-
-            if (assErr) {
-                setFatalError(assErr.message);
-                setLoading(false);
-                return;
-            }
-            setAssignments((assRows ?? []) as MenuAssignment[]);
-
-            // текущие продукты
-            await reloadFood(user.id);
-
-            setLoading(false);
         };
 
         load();
-    }, [reloadFood]);
+    }, [reloadFood, reloadLabReports]);
 
-    // ✅ считаем рационами только записи с реальным меню (убирает мусор/старые “цели”)
     const menuAssignments = useMemo(() => {
         return assignments.filter((a) => !!a.menu_id || !!a.menu_data);
     }, [assignments]);
 
-    // ✅ текущий активный рацион (без истории)
     const activeAssignment = useMemo(() => {
         const explicit = menuAssignments.find((a) => a.status === "active");
         return explicit ?? menuAssignments[0] ?? null;
@@ -379,7 +525,7 @@ export default function ClientPage() {
                 ) : null}
             </section>
 
-            {/* текущий активный рацион (без истории) */}
+            {/* текущий активный рацион */}
             <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
                 <h3 className="text-sm font-semibold">Текущий активный рацион</h3>
 
@@ -407,7 +553,6 @@ export default function ClientPage() {
                             </span>
                         </div>
 
-                        {/* Открыть меню (блюда + готовка) */}
                         <details className="mt-3">
                             <summary className="cursor-pointer text-xs font-medium text-zinc-700 underline underline-offset-4">
                                 Открыть меню (блюда и готовка)
@@ -485,12 +630,11 @@ export default function ClientPage() {
                 )}
             </section>
 
-            {/* текущие продукты (без истории) */}
+            {/* продукты */}
             <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                     <h3 className="text-sm font-semibold">Разрешённые и запрещённые продукты</h3>
 
-                    {/* кнопка на случай, если нутрициолог только что сохранил и клиент хочет подтянуть без F5 */}
                     {basic?.id ? (
                         <button
                             type="button"
@@ -550,6 +694,148 @@ export default function ClientPage() {
                             Обновлено: {formatDate(currentFood.created_at)}
                         </div>
                     </>
+                )}
+            </section>
+
+            {/* Анализы (клиент загружает сам) */}
+            <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        <h3 className="text-sm font-semibold">Анализы (файлы)</h3>
+                        <p className="mt-1 text-xs text-zinc-500">
+                            Загрузите PDF или фото. Специалист увидит это в вашей карточке.
+                        </p>
+                    </div>
+
+                    {basic?.id ? (
+                        <button
+                            type="button"
+                            onClick={() => reloadLabReports(basic.id)}
+                            className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100"
+                        >
+                            Обновить
+                        </button>
+                    ) : null}
+                </div>
+
+                {labHint ? (
+                    <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-3 text-xs text-zinc-600">
+                        {labHint}
+                    </div>
+                ) : null}
+
+                <div className="grid gap-3 rounded-xl bg-zinc-50 p-3 sm:grid-cols-3">
+                    <label className="flex flex-col gap-1 text-xs">
+                        Название
+                        <input
+                            value={labTitle}
+                            onChange={(e) => setLabTitle(e.target.value)}
+                            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900"
+                            placeholder="ОАК / Биохимия / Витамин D..."
+                        />
+                    </label>
+
+                    <label className="flex flex-col gap-1 text-xs">
+                        Дата сдачи
+                        <input
+                            type="date"
+                            value={labTakenAt}
+                            onChange={(e) => setLabTakenAt(e.target.value)}
+                            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900"
+                        />
+                    </label>
+
+                    <label className="flex flex-col gap-1 text-xs">
+                        Файл (PDF/JPG/PNG)
+                        <input
+                            type="file"
+                            accept=".pdf,image/*"
+                            onChange={onPickLabFile}
+                            disabled={labBusy}
+                            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none"
+                        />
+                    </label>
+
+                    <div className="sm:col-span-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="text-[11px] text-zinc-500">
+                            {labFile ? (
+                                <>
+                                    Выбран файл: <span className="font-medium text-zinc-700">{labFile.name}</span>
+                                </>
+                            ) : (
+                                "Файл не выбран."
+                            )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={uploadLab}
+                                disabled={labBusy || !labFile || !basic?.id}
+                                className="rounded-full bg-black px-4 py-2 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
+                            >
+                                {labBusy ? "Загружаю..." : "Загрузить"}
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setLabFile(null);
+                                    setLabTitle("");
+                                    setLabTakenAt("");
+                                }}
+                                disabled={labBusy}
+                                className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-60"
+                            >
+                                Сбросить
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="sm:col-span-3 text-[11px] text-zinc-500">
+                        Если bucket <b>lab_reports</b> приватный — файлы открываются через signed URL (это норм).
+                    </div>
+                </div>
+
+                {labReports.length === 0 ? (
+                    <p className="text-xs text-zinc-500">Пока нет загруженных анализов.</p>
+                ) : (
+                    <div className="space-y-2">
+                        {labReports.map((r) => (
+                            <div
+                                key={r.id}
+                                className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3 text-xs"
+                            >
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <div className="font-medium">{r.title ?? "Анализ"}</div>
+                                        <div className="mt-1 text-[11px] text-zinc-500">
+                                            дата: {formatDate(r.taken_at)} · загружено: {formatDate(r.created_at)}
+                                        </div>
+
+                                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => openLabFile(r.file_path)}
+                                                className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-[11px] text-zinc-700 hover:bg-zinc-100"
+                                            >
+                                                Открыть файл
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => deleteLab(r)}
+                                                disabled={labBusy}
+                                                className="rounded-full border border-red-200 bg-white px-3 py-1.5 text-[11px] text-red-600 hover:bg-red-50 disabled:opacity-60"
+                                            >
+                                                Удалить
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 )}
             </section>
         </div>
