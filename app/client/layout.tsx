@@ -48,6 +48,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
   }
 
     const navItems = [
+        { href: "/client/specialists", label: "Мои специалисты" },
         { href: "/client", label: "Мой рацион" },
         { href: "/client/profile", label: "Профиль и цели" },
         { href: "/client/journal", label: "Дневник питания" },
