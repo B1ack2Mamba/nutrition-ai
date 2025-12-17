@@ -94,6 +94,9 @@ export default function NutritionistLayout({
                     </div>
 
                     <nav className="flex flex-col gap-1">
+                        <NavItem href="/nutritionist/profile"
+                            label="Мой профиль"
+                        />
                         <NavItem
                             href="/nutritionist/dishes"
                             label="Мои блюда"
@@ -106,6 +109,8 @@ export default function NutritionistLayout({
                             href="/nutritionist/clients"
                             label="Клиенты"
                         />
+                       
+                     
                     </nav>
 
                     <p className="mt-4 text-[11px] text-zinc-500 dark:text-zinc-500">
