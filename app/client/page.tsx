@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
+/* ===================== Types ===================== */
+
 type BasicProfile = {
     id: string;
     full_name: string | null;
@@ -26,7 +28,7 @@ type MenuAssignment = {
     created_at: string;
     menu_id: string | null;
     days_count: number | null;
-    menu_data: unknown | null;
+    menu_data: unknown | null; // jsonb
 };
 
 type FoodRulesRow = {
@@ -46,6 +48,33 @@ type FoodRulesRow = {
     created_at: string;
     updated_at?: string | null;
 };
+
+type DishView = {
+    id?: string;
+    name: string;
+    details?: string;
+    ingredients?: string[];
+    steps?: string[];
+};
+
+type MealView = {
+    name: string;
+    dishes: DishView[];
+};
+
+type DayView = {
+    label: string;
+    meals: MealView[];
+};
+
+/* ===================== Helpers ===================== */
+
+const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuidString(v: unknown): v is string {
+    return typeof v === "string" && UUID_RE.test(v.trim());
+}
 
 function formatDate(d: string | null | undefined): string {
     if (!d) return "—";
@@ -71,22 +100,7 @@ function getString(v: unknown): string | null {
     return null;
 }
 
-function pickFirstNonEmpty<T>(...lists: T[][]): T[] {
-    for (const l of lists) {
-        if (Array.isArray(l) && l.length) return l;
-    }
-    return [];
-}
-
-/**
- * Принимает что угодно:
- * - string
- * - string[]
- * - jsonb массив
- * - null
- * - number/bool
- * И возвращает список токенов.
- */
+/** string | string[] | jsonb array | object -> string[] */
 function splitList(value: unknown): string[] {
     const out: string[] = [];
 
@@ -110,28 +124,78 @@ function splitList(value: unknown): string[] {
             out.push(String(v));
             return;
         }
+
+        if (isRecord(v)) {
+            add(Object.values(v));
+            return;
+        }
     };
 
     add(value);
-    return Array.from(new Set(out.map((x) => x.trim()).filter(Boolean))).slice(0, 60);
+    return Array.from(new Set(out.map((x) => x.trim()).filter(Boolean))).slice(0, 80);
 }
 
-type DishView = {
-    name: string;
-    details?: string;
-    ingredients?: string[];
-    steps?: string[];
-};
+function pickFirstNonEmpty<T>(...lists: T[][]): T[] {
+    for (const l of lists) {
+        if (Array.isArray(l) && l.length) return l;
+    }
+    return [];
+}
 
-type MealView = {
-    name: string;
-    dishes: DishView[];
-};
+function normalizeSteps(v: unknown): string[] {
+    if (!v) return [];
+    if (Array.isArray(v)) {
+        return v
+            .map((x) => (typeof x === "string" ? x.trim() : ""))
+            .filter(Boolean)
+            .slice(0, 40);
+    }
+    if (typeof v === "string") {
+        return v
+            .split(/\n+/g)
+            .map((x) => x.trim())
+            .filter(Boolean)
+            .slice(0, 40);
+    }
+    return [];
+}
 
-type DayView = {
-    label: string;
-    meals: MealView[];
-};
+function normalizeIngredients(v: unknown): string[] {
+    if (!v) return [];
+
+    if (Array.isArray(v)) {
+        return v
+            .map((x) => {
+                if (typeof x === "string") return x.trim();
+                if (isRecord(x)) {
+                    const n =
+                        getString(x.name) ||
+                        getString(x.title) ||
+                        getString(x.product) ||
+                        getString(x.item);
+                    const g = getString(x.grams) || getString(x.amount) || getString(x.qty);
+                    return [n, g].filter(Boolean).join(" ");
+                }
+                return "";
+            })
+            .filter(Boolean)
+            .slice(0, 80);
+    }
+
+    if (typeof v === "string") {
+        return v
+            .split(/[,;\n]/g)
+            .map((x) => x.trim())
+            .filter(Boolean)
+            .slice(0, 80);
+    }
+
+    if (isRecord(v)) {
+        return normalizeIngredients(Object.values(v));
+    }
+
+    return [];
+}
 
 function recordLooksLikeDish(r: Record<string, unknown>): boolean {
     return (
@@ -143,8 +207,8 @@ function recordLooksLikeDish(r: Record<string, unknown>): boolean {
         "kcal" in r ||
         "calories" in r ||
         "energy" in r ||
-        "dish" in r ||
-        "recipe_name" in r
+        "recipe_name" in r ||
+        "dish" in r
     );
 }
 
@@ -159,10 +223,15 @@ function recordLooksLikeMeal(r: Record<string, unknown>): boolean {
     );
 }
 
-function toList(value: unknown, opts?: { treatRecordAsSingleIfLooksLike?: (r: Record<string, unknown>) => boolean }): unknown[] {
+function toList(
+    value: unknown,
+    opts?: { treatRecordAsSingleIfLooksLike?: (r: Record<string, unknown>) => boolean },
+): unknown[] {
     if (Array.isArray(value)) return value;
     if (isRecord(value)) {
-        if (opts?.treatRecordAsSingleIfLooksLike && opts.treatRecordAsSingleIfLooksLike(value)) return [value];
+        if (opts?.treatRecordAsSingleIfLooksLike && opts.treatRecordAsSingleIfLooksLike(value)) {
+            return [value];
+        }
         return Object.values(value);
     }
     return [];
@@ -170,13 +239,21 @@ function toList(value: unknown, opts?: { treatRecordAsSingleIfLooksLike?: (r: Re
 
 function extractDays(menu: unknown): unknown[] {
     const m = asRecord(menu);
-    // days / plan / items / weeks и т.п.
     const candidates = [m.days, m.plan, m.items, m.weeks, m.week, m.schedule];
     for (const c of candidates) {
         const list = toList(c);
         if (list.length) return list;
     }
     return [];
+}
+
+function prettyMealName(raw: string): string {
+    const k = raw.toLowerCase().trim();
+    if (k === "breakfast") return "breakfast";
+    if (k === "lunch") return "lunch";
+    if (k === "dinner") return "dinner";
+    if (k === "snack" || k === "snacks") return "snack";
+    return raw;
 }
 
 function normalizeMeals(day: unknown): unknown[] {
@@ -189,9 +266,9 @@ function normalizeMeals(day: unknown): unknown[] {
         // если это реально один meal-объект
         if (recordLooksLikeMeal(meals)) return [meals];
 
-        // иначе это словарь типа { lunch: {...}, dinner: {...} }
+        // иначе это словарь типа { lunch: "...dishId...", dinner: "...dishId..." }
         return Object.entries(meals).map(([k, v]) => ({
-            name: k,
+            name: prettyMealName(k),
             ...(isRecord(v) ? v : { value: v }),
         }));
     }
@@ -200,15 +277,31 @@ function normalizeMeals(day: unknown): unknown[] {
     const maybeMealKeys = ["breakfast", "lunch", "dinner", "snack", "snacks", "supper"];
     const out: unknown[] = [];
     for (const key of maybeMealKeys) {
-        if (key in d) out.push({ name: key, value: d[key] }); // ✅ без any
+        if (key in d) out.push({ name: prettyMealName(key), value: d[key] });
     }
     return out;
 }
 
 function normalizeDishes(meal: unknown): unknown[] {
+    // если meal сам по себе строка (dishId) — это блюдо
+    if (typeof meal === "string" || typeof meal === "number") return [meal];
+
     const m = asRecord(meal);
 
-    const candidates = [m.dishes, m.items, m.recipes, m.recipe, m.meals, m.value, m.products, m.components];
+    // если положили прямо в value / dishId
+    const direct = m.value ?? m.dishId ?? m.dish_id;
+    if (typeof direct === "string" || typeof direct === "number") return [direct];
+
+    const candidates = [
+        m.dishes,
+        m.items,
+        m.recipes,
+        m.recipe,
+        m.meals,
+        m.products,
+        m.components,
+    ];
+
     for (const c of candidates) {
         const list = toList(c, { treatRecordAsSingleIfLooksLike: recordLooksLikeDish });
         if (list.length) return list;
@@ -220,9 +313,10 @@ function normalizeDishes(meal: unknown): unknown[] {
         if (list.length) return list;
 
         if (isRecord(v)) {
-            const list2 = toList(v.dishes ?? v.items ?? v.recipes ?? v.recipe ?? v.value ?? v.products, {
-                treatRecordAsSingleIfLooksLike: recordLooksLikeDish,
-            });
+            const list2 = toList(
+                v.dishes ?? v.items ?? v.recipes ?? v.recipe ?? v.value ?? v.products,
+                { treatRecordAsSingleIfLooksLike: recordLooksLikeDish },
+            );
             if (list2.length) return list2;
         }
     }
@@ -230,108 +324,177 @@ function normalizeDishes(meal: unknown): unknown[] {
     return [];
 }
 
-function normalizeSteps(v: unknown): string[] {
-    if (!v) return [];
-    if (Array.isArray(v)) {
-        return v
-            .map((x) => (typeof x === "string" ? x.trim() : ""))
-            .filter(Boolean)
-            .slice(0, 25);
-    }
-    if (typeof v === "string") {
-        return v
-            .split(/\n+/g)
-            .map((x) => x.trim())
-            .filter(Boolean)
-            .slice(0, 25);
-    }
-    return [];
-}
+/* ===================== Dish lookup (no any) ===================== */
 
-function normalizeIngredients(v: unknown): string[] {
-    if (!v) return [];
-    if (Array.isArray(v)) {
-        return v
-            .map((x) => {
-                if (typeof x === "string") return x.trim();
-                if (isRecord(x)) {
-                    const n = getString(x.name) || getString(x.title) || getString(x.product);
-                    const g = getString(x.grams) || getString(x.amount) || getString(x.qty);
-                    return [n, g].filter(Boolean).join(" ");
+function collectDishIdsFromMenu(menu: unknown): string[] {
+    const out = new Set<string>();
+    const days = extractDays(menu);
+
+    for (const day of days) {
+        for (const meal of normalizeMeals(day)) {
+            for (const dish of normalizeDishes(meal)) {
+                if (typeof dish === "string") {
+                    const t = dish.trim();
+                    if (isUuidString(t)) out.add(t);
+                } else if (isRecord(dish)) {
+                    const maybe = dish.id ?? dish.dish_id ?? dish.dishId;
+                    if (isUuidString(maybe)) out.add(maybe.trim());
                 }
-                return "";
-            })
-            .filter(Boolean)
-            .slice(0, 50);
+            }
+        }
     }
-    if (typeof v === "string") {
-        return v
-            .split(/[,;\n]/g)
-            .map((x) => x.trim())
-            .filter(Boolean)
-            .slice(0, 50);
-    }
-    if (isRecord(v)) {
-        return normalizeIngredients(Object.values(v));
-    }
-    return [];
+
+    return Array.from(out);
 }
 
-function buildMenuView(menu: unknown): DayView[] {
+async function fetchDishIndexByIds(ids: string[]): Promise<{
+    index: Record<string, Record<string, unknown>>;
+    source?: string;
+    error?: string;
+}> {
+    if (!ids.length) return { index: {} };
+
+    // подстрой под свои реальные таблицы (если знаешь точную — оставь одну)
+    const TABLES = ["nutritionist_dishes", "dishes", "recipes", "dish_recipes", "nutritionist_recipes"];
+    const COLS = ["id", "dish_id", "dishId"] as const;
+
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200));
+
+    for (const table of TABLES) {
+        for (const col of COLS) {
+            const out: Record<string, Record<string, unknown>> = {};
+
+            for (const ch of chunks) {
+                const { data, error } = await supabase.from(table).select("*").in(col, ch);
+                if (error) {
+                    // если нет прав/таблицы — просто пробуем дальше
+                    continue;
+                }
+
+                for (const rowUnknown of (data ?? [])) {
+                    if (!isRecord(rowUnknown)) continue;
+
+                    const ridRaw = rowUnknown.id ?? rowUnknown.dish_id ?? rowUnknown.dishId;
+                    const rid =
+                        typeof ridRaw === "string" || typeof ridRaw === "number" ? String(ridRaw) : "";
+
+                    if (isUuidString(rid)) out[rid] = rowUnknown;
+                }
+            }
+
+            if (Object.keys(out).length) {
+                return { index: out, source: `${table}.${col}` };
+            }
+        }
+    }
+
+    return {
+        index: {},
+        error: "Не удалось подгрузить рецепты по dishId (скорее всего нет прав/RLS или таблица другая).",
+    };
+}
+
+function dishFromRecord(di: Record<string, unknown>, fallbackId?: string): DishView {
+    const name =
+        getString(di.name) ||
+        getString(di.title) ||
+        getString(di.dish) ||
+        getString(di.recipe_name) ||
+        (fallbackId ? "Блюдо" : "Блюдо");
+
+    const grams = getString(di.grams) || getString(di.amount) || getString(di.portion);
+    const kcal = getString(di.kcal) || getString(di.calories) || getString(di.energy);
+
+    const details = [grams ? `порция: ${grams}` : null, kcal ? `ккал: ${kcal}` : null]
+        .filter(Boolean)
+        .join(" · ");
+
+    const ingredients = pickFirstNonEmpty(
+        normalizeIngredients(di.ingredients),
+        normalizeIngredients(di.products),
+        normalizeIngredients(di.items),
+        normalizeIngredients(di.components),
+    );
+
+    const steps = pickFirstNonEmpty(
+        normalizeSteps(di.steps),
+        normalizeSteps(di.instructions),
+        normalizeSteps(di.cooking),
+        normalizeSteps(di.recipe),
+    );
+
+    return {
+        id: fallbackId,
+        name,
+        details: details || undefined,
+        ingredients: ingredients.length ? ingredients : undefined,
+        steps: steps.length ? steps : undefined,
+    };
+}
+
+function buildMenuView(menu: unknown, dishIndex: Record<string, Record<string, unknown>>): DayView[] {
     const days = extractDays(menu).slice(0, 60);
 
     return days.map((day, dayIndex) => {
         const d = asRecord(day);
-        const label = getString(d.day) || getString(d.title) || getString(d.name) || `Day ${dayIndex + 1}`;
+        const label =
+            getString(d.day) ||
+            getString(d.label) ||
+            getString(d.title) ||
+            getString(d.name) ||
+            `Day ${dayIndex + 1}`;
 
-        const meals = normalizeMeals(day)
+        const meals: MealView[] = normalizeMeals(day)
             .slice(0, 30)
             .map((meal, mealIndex) => {
                 const m = asRecord(meal);
-                const mealName = getString(m.name) || getString(m.title) || getString(m.type) || `Meal ${mealIndex + 1}`;
+                const mealName =
+                    getString(m.name) ||
+                    getString(m.title) ||
+                    getString(m.type) ||
+                    `Meal ${mealIndex + 1}`;
 
-                const dishes = normalizeDishes(meal)
-                    .slice(0, 120)
+                const dishes: DishView[] = normalizeDishes(meal)
+                    .slice(0, 200)
                     .map((dish) => {
+                        // 1) строка: или UUID (dishId), или уже имя
                         if (typeof dish === "string") {
-                            return { name: dish.trim() || "Блюдо" } as DishView;
+                            const t = dish.trim();
+
+                            if (isUuidString(t)) {
+                                const rec = dishIndex[t];
+                                if (rec) return dishFromRecord(rec, t);
+                                return {
+                                    id: t,
+                                    name: "Блюдо",
+                                    details: "рецепт не передан в меню / нет доступа к базе блюд",
+                                };
+                            }
+
+                            return { name: t || "Блюдо" };
                         }
 
+                        // 2) объект блюда
                         const di = asRecord(dish);
 
-                        const name =
-                            getString(di.name) ||
-                            getString(di.title) ||
-                            getString(di.dish) ||
-                            getString(di.recipe_name) ||
-                            "Блюдо";
+                        const ridRaw = di.id ?? di.dish_id ?? di.dishId;
+                        const rid = isUuidString(ridRaw) ? ridRaw.trim() : undefined;
 
-                        const grams = getString(di.grams) || getString(di.amount) || getString(di.portion);
-                        const kcal = getString(di.kcal) || getString(di.calories) || getString(di.energy);
+                        // если объект уже содержит всё — используем его
+                        if (recordLooksLikeDish(di)) {
+                            return dishFromRecord(di, rid);
+                        }
 
-                        const details = [grams ? `порция: ${grams}` : null, kcal ? `ккал: ${kcal}` : null]
-                            .filter(Boolean)
-                            .join(" · ");
+                        // если объект пустой, но есть rid и он есть в индексе — берём из индекса
+                        if (rid && dishIndex[rid]) {
+                            return dishFromRecord(dishIndex[rid], rid);
+                        }
 
-                        const ingredients = pickFirstNonEmpty(
-                            normalizeIngredients(di.ingredients),
-                            normalizeIngredients(di.products),
-                            normalizeIngredients(di.items),
-                            normalizeIngredients(di.components),
-                        );
-
-                        const steps = pickFirstNonEmpty(
-                            normalizeSteps(di.steps),
-                            normalizeSteps(di.instructions),
-                            normalizeSteps(di.cooking),
-                            normalizeSteps(di.recipe),
-                        );
-
+                        // fallback
                         return {
-                            name,
-                            details: details || undefined,
-                            ingredients: ingredients.length ? ingredients : undefined,
-                            steps: steps.length ? steps : undefined,
+                            id: rid,
+                            name: getString(di.name) || getString(di.title) || "Блюдо",
                         };
                     });
 
@@ -347,6 +510,8 @@ function isAuthRefreshTokenErrorMessage(msg: string) {
     return m.includes("refresh token") || m.includes("invalid refresh token");
 }
 
+/* ===================== Page ===================== */
+
 export default function ClientPage() {
     const [loading, setLoading] = useState(true);
     const [fatalError, setFatalError] = useState<string | null>(null);
@@ -358,8 +523,11 @@ export default function ClientPage() {
     const [currentFood, setCurrentFood] = useState<FoodRulesRow | null>(null);
     const [foodHint, setFoodHint] = useState<string | null>(null);
 
+    // рецепты/блюда по UUID
+    const [dishIndex, setDishIndex] = useState<Record<string, Record<string, unknown>>>({});
+    const [dishHint, setDishHint] = useState<string | null>(null);
+
     const reloadFood = useCallback(async (clientId: string) => {
-        // Сначала updated_at -> затем created_at (и фоллбек если колонки нет)
         const q1 = await supabase
             .from("client_food_rules")
             .select("*")
@@ -399,28 +567,34 @@ export default function ClientPage() {
     }, []);
 
     useEffect(() => {
-        const load = async () => {
-            setLoading(true);
-            setFatalError(null);
+        let cancelled = false;
 
+        (async () => {
             try {
                 const { data, error } = await supabase.auth.getUser();
+
                 if (error) {
                     if (isAuthRefreshTokenErrorMessage(error.message)) {
                         await supabase.auth.signOut();
-                        setFatalError("Сессия истекла. Войдите снова.");
-                        setLoading(false);
+                        if (!cancelled) {
+                            setFatalError("Сессия истекла. Войдите снова.");
+                            setLoading(false);
+                        }
                         return;
                     }
-                    setFatalError(error.message);
-                    setLoading(false);
+                    if (!cancelled) {
+                        setFatalError(error.message);
+                        setLoading(false);
+                    }
                     return;
                 }
 
                 const user = data.user;
                 if (!user) {
-                    setFatalError("Нет авторизации");
-                    setLoading(false);
+                    if (!cancelled) {
+                        setFatalError("Нет авторизации");
+                        setLoading(false);
+                    }
                     return;
                 }
 
@@ -431,20 +605,18 @@ export default function ClientPage() {
                     .single();
 
                 if (profErr) {
-                    setFatalError(profErr.message);
-                    setLoading(false);
+                    if (!cancelled) {
+                        setFatalError(profErr.message);
+                        setLoading(false);
+                    }
                     return;
                 }
-                setBasic(prof as BasicProfile);
 
                 const { data: extRows } = await supabase
                     .from("client_profiles")
                     .select("user_id, main_goal, goal_description")
                     .eq("user_id", user.id)
                     .limit(1);
-
-                if (extRows && extRows.length > 0) setExtended(extRows[0] as ExtendedProfile);
-                else setExtended(null);
 
                 const { data: assRows, error: assErr } = await supabase
                     .from("client_menu_assignments")
@@ -453,28 +625,39 @@ export default function ClientPage() {
                     .order("created_at", { ascending: false });
 
                 if (assErr) {
-                    setFatalError(assErr.message);
-                    setLoading(false);
+                    if (!cancelled) {
+                        setFatalError(assErr.message);
+                        setLoading(false);
+                    }
                     return;
                 }
-                setAssignments((assRows ?? []) as MenuAssignment[]);
 
                 await reloadFood(user.id);
 
-                setLoading(false);
+                if (!cancelled) {
+                    setBasic(prof as BasicProfile);
+                    setExtended(extRows && extRows.length ? (extRows[0] as ExtendedProfile) : null);
+                    setAssignments((assRows ?? []) as MenuAssignment[]);
+                    setFatalError(null);
+                    setLoading(false);
+                }
             } catch (e) {
-                const msg = e instanceof Error ? e.message : String(e);
-                setFatalError(msg);
-                setLoading(false);
+                if (!cancelled) {
+                    setFatalError(e instanceof Error ? e.message : String(e));
+                    setLoading(false);
+                }
             }
-        };
+        })();
 
-        load();
+        return () => {
+            cancelled = true;
+        };
     }, [reloadFood]);
 
-    const menuAssignments = useMemo(() => {
-        return assignments.filter((a) => !!a.menu_id || !!a.menu_data);
-    }, [assignments]);
+    const menuAssignments = useMemo(
+        () => assignments.filter((a) => !!a.menu_id || !!a.menu_data),
+        [assignments],
+    );
 
     const activeAssignment = useMemo(() => {
         const explicit = menuAssignments.find((a) => a.status === "active");
@@ -483,11 +666,40 @@ export default function ClientPage() {
 
     const menuData = activeAssignment?.menu_data ?? null;
 
-    const menuView = useMemo(() => {
-        return menuData ? buildMenuView(menuData) : [];
+    // подгружаем блюда по UUID из меню
+    useEffect(() => {
+        let cancelled = false;
+
+        (async () => {
+            // чтобы не триггерить “синхронный setState внутри effect” — делаем await в любом случае
+            await Promise.resolve();
+
+            const ids = menuData ? collectDishIdsFromMenu(menuData) : [];
+            if (!ids.length) {
+                if (!cancelled) {
+                    setDishIndex({});
+                    setDishHint(null);
+                }
+                return;
+            }
+
+            const res = await fetchDishIndexByIds(ids);
+
+            if (!cancelled) {
+                setDishIndex(res.index);
+                setDishHint(res.error ? res.error : res.source ? `Рецепты: ${res.source}` : null);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
     }, [menuData]);
 
-    // ✅ поддержка обоих вариантов колонок
+    const menuView = useMemo(() => {
+        return menuData ? buildMenuView(menuData, dishIndex) : [];
+    }, [menuData, dishIndex]);
+
     const allowedTokens = useMemo(
         () => splitList(currentFood?.allowed_products ?? currentFood?.allowed),
         [currentFood],
@@ -502,103 +714,114 @@ export default function ClientPage() {
         return currentFood.updated_at ?? currentFood.created_at;
     }, [currentFood]);
 
-    if (loading) return <p className="text-sm text-zinc-500">Загружаю…</p>;
+    if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">Загружаю…</p>;
     if (fatalError) return <p className="text-sm text-red-500">{fatalError}</p>;
 
     return (
         <div className="space-y-4">
             <header>
                 <h2 className="text-2xl font-semibold">Мой рацион</h2>
-                <p className="mt-1 text-sm text-zinc-500">
+                <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
                     Здесь отображаются текущий назначенный рацион и текущие рекомендации.
                 </p>
             </header>
 
             {/* цель */}
-            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-                <div className="text-xs text-zinc-500">Цель</div>
+            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">Цель</div>
                 <div className="mt-1 text-base font-semibold">{extended?.main_goal || "—"}</div>
                 {extended?.goal_description ? (
-                    <div className="mt-1 text-sm text-zinc-600">{extended.goal_description}</div>
+                    <div className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">{extended.goal_description}</div>
                 ) : null}
             </section>
 
             {/* текущий активный рацион */}
-            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
                 <h3 className="text-sm font-semibold">Текущий активный рацион</h3>
 
                 {!activeAssignment ? (
-                    <p className="mt-2 text-xs text-zinc-500">Пока нет назначенного рациона.</p>
+                    <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Пока нет назначенного рациона.</p>
                 ) : (
-                    <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+                    <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <div className="text-sm font-semibold">{activeAssignment.title}</div>
-                                <div className="mt-1 text-xs text-zinc-500">
+                                <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                                     {activeAssignment.start_date
                                         ? `Назначен ${formatDate(activeAssignment.start_date)}`
                                         : `Назначен ${formatDate(activeAssignment.created_at)}`}
                                     {activeAssignment.end_date ? ` · до ${formatDate(activeAssignment.end_date)}` : ""}
                                 </div>
+
                                 {activeAssignment.notes ? (
-                                    <div className="mt-2 text-xs text-zinc-600">
-                                        <span className="text-zinc-500">Комментарий:</span> {activeAssignment.notes}
+                                    <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">
+                                        <span className="text-zinc-500 dark:text-zinc-400">Комментарий:</span> {activeAssignment.notes}
                                     </div>
                                 ) : null}
+
+                                {dishHint ? (
+                                    <div className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">{dishHint}</div>
+                                ) : null}
                             </div>
-                            <span className="rounded-full bg-black px-2 py-0.5 text-[10px] font-medium text-white">
+
+                            <span className="rounded-full bg-black px-2 py-0.5 text-[10px] font-medium text-white dark:bg-zinc-100 dark:text-black">
                                 активный
                             </span>
                         </div>
 
                         <details className="mt-3">
-                            <summary className="cursor-pointer text-xs font-medium text-zinc-700 underline underline-offset-4">
+                            <summary className="cursor-pointer text-xs font-medium text-zinc-700 underline underline-offset-4 dark:text-zinc-200">
                                 Открыть меню (блюда и готовка)
                             </summary>
 
                             {!activeAssignment.menu_data ? (
-                                <div className="mt-2 text-xs text-zinc-500">В этом назначении нет данных меню.</div>
+                                <div className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">В этом назначении нет данных меню.</div>
                             ) : (
-                                <div className="mt-3 max-h-[520px] overflow-auto rounded-xl border border-zinc-200 bg-white p-3">
+                                <div className="mt-3 max-h-[520px] overflow-auto rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
                                     <div className="space-y-3">
                                         {menuView.length === 0 ? (
-                                            <div className="text-xs text-zinc-500">
+                                            <div className="text-xs text-zinc-500 dark:text-zinc-400">
                                                 Меню есть, но структура нестандартная — парсер не нашёл дни/приёмы пищи.
                                             </div>
                                         ) : (
                                             menuView.map((day, di) => (
-                                                <details
-                                                    key={`${day.label}-${di}`}
-                                                    className="rounded-lg border border-zinc-200 p-3"
-                                                >
+                                                <details key={`${day.label}-${di}`} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
                                                     <summary className="cursor-pointer text-sm font-semibold">{day.label}</summary>
 
                                                     <div className="mt-3 space-y-3">
                                                         {day.meals.map((meal, mi) => (
-                                                            <details
-                                                                key={`${meal.name}-${mi}`}
-                                                                className="rounded-lg bg-zinc-50 p-3"
-                                                            >
+                                                            <details key={`${meal.name}-${mi}`} className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-900">
                                                                 <summary className="cursor-pointer text-xs font-semibold">{meal.name}</summary>
 
                                                                 <div className="mt-2 space-y-2">
                                                                     {meal.dishes.length === 0 ? (
-                                                                        <div className="text-xs text-zinc-500">Блюда не указаны.</div>
+                                                                        <div className="text-xs text-zinc-500 dark:text-zinc-400">Блюда не указаны.</div>
                                                                     ) : (
                                                                         meal.dishes.map((dish, xi) => (
-                                                                            <div
-                                                                                key={`${dish.name}-${xi}`}
-                                                                                className="rounded-lg border border-zinc-200 bg-white p-3"
+                                                                            <details
+                                                                                key={`${dish.id ?? dish.name}-${xi}`}
+                                                                                className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950"
                                                                             >
-                                                                                <div className="text-sm font-semibold">{dish.name}</div>
+                                                                                <summary className="cursor-pointer text-sm font-semibold">
+                                                                                    {dish.name}
+                                                                                </summary>
+
+                                                                                {dish.id ? (
+                                                                                    <div className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                                                                                        ID блюда: {dish.id}
+                                                                                    </div>
+                                                                                ) : null}
+
                                                                                 {dish.details ? (
-                                                                                    <div className="mt-1 text-xs text-zinc-500">{dish.details}</div>
+                                                                                    <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{dish.details}</div>
                                                                                 ) : null}
 
                                                                                 {dish.ingredients?.length ? (
-                                                                                    <div className="mt-2">
-                                                                                        <div className="text-xs font-semibold text-zinc-700">Ингредиенты</div>
-                                                                                        <ul className="mt-1 list-disc pl-5 text-xs text-zinc-600">
+                                                                                    <div className="mt-3">
+                                                                                        <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                                                                                            Ингредиенты
+                                                                                        </div>
+                                                                                        <ul className="mt-1 list-disc pl-5 text-xs text-zinc-600 dark:text-zinc-300">
                                                                                             {dish.ingredients.map((ing) => (
                                                                                                 <li key={ing}>{ing}</li>
                                                                                             ))}
@@ -607,16 +830,24 @@ export default function ClientPage() {
                                                                                 ) : null}
 
                                                                                 {dish.steps?.length ? (
-                                                                                    <div className="mt-2">
-                                                                                        <div className="text-xs font-semibold text-zinc-700">Приготовление</div>
-                                                                                        <ol className="mt-1 list-decimal pl-5 text-xs text-zinc-600">
+                                                                                    <div className="mt-3">
+                                                                                        <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                                                                                            Приготовление
+                                                                                        </div>
+                                                                                        <ol className="mt-1 list-decimal pl-5 text-xs text-zinc-600 dark:text-zinc-300">
                                                                                             {dish.steps.map((st, si) => (
                                                                                                 <li key={`${si}-${st}`}>{st}</li>
                                                                                             ))}
                                                                                         </ol>
                                                                                     </div>
                                                                                 ) : null}
-                                                                            </div>
+
+                                                                                {!dish.ingredients?.length && !dish.steps?.length ? (
+                                                                                    <div className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                                                                                        Рецепт не передан (или нет доступа к базе блюд).
+                                                                                    </div>
+                                                                                ) : null}
+                                                                            </details>
                                                                         ))
                                                                     )}
                                                                 </div>
@@ -635,7 +866,7 @@ export default function ClientPage() {
             </section>
 
             {/* продукты */}
-            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
                 <div className="flex items-start justify-between gap-3">
                     <h3 className="text-sm font-semibold">Разрешённые и запрещённые продукты</h3>
 
@@ -643,7 +874,7 @@ export default function ClientPage() {
                         <button
                             type="button"
                             onClick={() => reloadFood(basic.id)}
-                            className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100"
+                            className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
                         >
                             Обновить
                         </button>
@@ -651,50 +882,56 @@ export default function ClientPage() {
                 </div>
 
                 {foodHint ? (
-                    <p className="mt-2 text-xs text-zinc-500">{foodHint}</p>
+                    <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">{foodHint}</p>
                 ) : !currentFood ? (
-                    <p className="mt-2 text-xs text-zinc-500">Пока нет рекомендаций.</p>
+                    <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Пока нет рекомендаций.</p>
                 ) : (
                     <>
                         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-xl bg-zinc-50 p-3">
-                                <div className="text-xs font-semibold text-zinc-700">Можно</div>
+                            <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900">
+                                <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">Можно</div>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                     {allowedTokens.length ? (
                                         allowedTokens.map((x) => (
-                                            <span key={x} className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs">
+                                            <span
+                                                key={x}
+                                                className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs dark:border-zinc-800 dark:bg-zinc-950"
+                                            >
                                                 {x}
                                             </span>
                                         ))
                                     ) : (
-                                        <span className="text-xs text-zinc-500">—</span>
+                                        <span className="text-xs text-zinc-500 dark:text-zinc-400">—</span>
                                     )}
                                 </div>
                             </div>
 
-                            <div className="rounded-xl bg-zinc-50 p-3">
-                                <div className="text-xs font-semibold text-zinc-700">Нельзя</div>
+                            <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900">
+                                <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">Нельзя</div>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                     {bannedTokens.length ? (
                                         bannedTokens.map((x) => (
-                                            <span key={x} className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs">
+                                            <span
+                                                key={x}
+                                                className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs dark:border-zinc-800 dark:bg-zinc-950"
+                                            >
                                                 {x}
                                             </span>
                                         ))
                                     ) : (
-                                        <span className="text-xs text-zinc-500">—</span>
+                                        <span className="text-xs text-zinc-500 dark:text-zinc-400">—</span>
                                     )}
                                 </div>
                             </div>
                         </div>
 
                         {currentFood.notes ? (
-                            <div className="mt-3 text-xs text-zinc-600">
-                                <span className="text-zinc-500">Комментарий:</span> {currentFood.notes}
+                            <div className="mt-3 text-xs text-zinc-600 dark:text-zinc-300">
+                                <span className="text-zinc-500 dark:text-zinc-400">Комментарий:</span> {currentFood.notes}
                             </div>
                         ) : null}
 
-                        <div className="mt-2 text-[11px] text-zinc-500">
+                        <div className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">
                             Обновлено: {formatDate(foodUpdatedAt)}
                         </div>
                     </>
