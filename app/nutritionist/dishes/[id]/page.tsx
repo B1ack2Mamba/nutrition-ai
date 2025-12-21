@@ -69,27 +69,40 @@ export default function EditDishPage() {
     const [aiComment, setAiComment] = useState<string>("");
 
     useEffect(() => {
-        const existing = getDishById(dishId);
-        if (!existing) {
-            setLoaded(true);
-            setDish(null);
-            return;
-        }
+        let alive = true;
 
-        setDish(existing);
-        setTitle(existing.title ?? "");
-        setCategory(existing.category ?? "breakfast");
-        setTimeMinutes(existing.timeMinutes);
-        setMacros(existing.macros ?? {});
-        setTags(existing.tags ?? []);
-        setIngredients(
-            (existing.ingredients?.length ? existing.ingredients : [createIngredient()]).map((x) => ({
-                ...x,
-            })),
-        );
-        setInstructions(existing.instructions ?? "");
-        setNotes(existing.notes ?? "");
-        setLoaded(true);
+        (async () => {
+            try {
+                setLoaded(false);
+                const existing = await getDishById(dishId);
+                if (!alive) return;
+
+                if (!existing) {
+                    setDish(null);
+                    return;
+                }
+
+                setDish(existing);
+                setTitle(existing.title ?? "");
+                setCategory(existing.category ?? "breakfast");
+                setTimeMinutes(existing.timeMinutes);
+                setMacros(existing.macros ?? {});
+                setTags(existing.tags ?? []);
+                setIngredients(
+                    (existing.ingredients?.length ? existing.ingredients : [createIngredient()]).map((x) => ({
+                        ...x,
+                    })),
+                );
+                setInstructions(existing.instructions ?? "");
+                setNotes(existing.notes ?? "");
+            } finally {
+                if (alive) setLoaded(true);
+            }
+        })();
+
+        return () => {
+            alive = false;
+        };
     }, [dishId]);
 
     const toggleTag = (tag: DishTag) => {
@@ -284,29 +297,28 @@ export default function EditDishPage() {
         }
     };
 
-    const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+    const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (!dish || !title.trim()) return;
 
         setSaving(true);
         try {
-            const now = new Date().toISOString();
-
-            const updated: Dish = {
-                ...dish,
+            await updateDish(dishId, {
                 title: title.trim(),
                 category,
                 timeMinutes,
+                difficulty: dish.difficulty,
+                ingredients: ingredients.filter((x) => x.name.trim() !== ""),
                 macros,
                 tags,
-                ingredients: ingredients.filter((x) => x.name.trim() !== ""),
                 instructions: instructions.trim() || undefined,
                 notes: notes.trim() || undefined,
-                updatedAt: now,
-            };
-
-            updateDish(updated);
+                imageUrl: dish.imageUrl,
+            });
             router.push("/nutritionist/dishes");
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : "Ошибка сохранения";
+            alert(msg);
         } finally {
             setSaving(false);
         }

@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Dish,
-  loadDishesFromStorage,
+  listDishes,
 } from "@/lib/dishes";
 import {
   Menu,
@@ -45,7 +45,9 @@ export default function EditMenuPage() {
   const params = useParams<{ id: string }>();
   const menuId = params.id;
 
-  const dishes = useMemo<Dish[]>(() => loadDishesFromStorage(), []);
+  const [dishes, setDishes] = useState<Dish[]>([]);
+  const [dishesLoading, setDishesLoading] = useState(true);
+  const [dishesError, setDishesError] = useState<string | null>(null);
 
   const [loaded, setLoaded] = useState(false);
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -59,23 +61,52 @@ export default function EditMenuPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const existing = getMenuById(menuId);
-    if (!existing) {
+    let alive = true;
+
+    (async () => {
+      try {
+        setDishesLoading(true);
+        setDishesError(null);
+        const items = await listDishes();
+        if (alive) setDishes(items);
+      } catch (e) {
+        if (alive) setDishesError(e instanceof Error ? e.message : "Не удалось загрузить блюда");
+      } finally {
+        if (alive) setDishesLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const existing = await getMenuById(menuId);
+      if (!alive) return;
+      if (!existing) {
+        setLoaded(true);
+        setMenu(null);
+        return;
+      }
+
+      const normalizedDays = ensureDaysStructure(existing);
+
+      setMenu(existing);
+      setTitle(existing.title);
+      setGoal(existing.goal);
+      setDaysCount(existing.daysCount);
+      setTargetCalories(existing.targetCalories);
+      setDescription(existing.description ?? "");
+      setDays(normalizedDays);
       setLoaded(true);
-      setMenu(null);
-      return;
-    }
+    })();
 
-    const normalizedDays = ensureDaysStructure(existing);
-
-    setMenu(existing);
-    setTitle(existing.title);
-    setGoal(existing.goal);
-    setDaysCount(existing.daysCount);
-    setTargetCalories(existing.targetCalories);
-    setDescription(existing.description ?? "");
-    setDays(normalizedDays);
-    setLoaded(true);
+    return () => {
+      alive = false;
+    };
   }, [menuId]);
 
   const handleDaysCountChange = (value: string) => {
@@ -118,34 +149,28 @@ export default function EditMenuPage() {
     );
   };
 
-  const handleDeleteMenu = () => {
+  const handleDeleteMenu = async () => {
     if (!menu) return;
     if (!confirm("Удалить этот рацион?")) return;
-    deleteMenu(menu.id);
+    await deleteMenu(menu.id);
     router.push("/nutritionist/menus");
   };
 
-  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!menu) return;
     if (!title.trim()) return;
 
     setSaving(true);
     try {
-      const now = new Date().toISOString();
-
-      const updated: Menu = {
-        ...menu,
+      await updateMenu(menu.id, {
         title: title.trim(),
         goal,
         daysCount,
         targetCalories,
         description: description.trim() || undefined,
         days,
-        updatedAt: now,
-      };
-
-      updateMenu(updated);
+      });
       router.push("/nutritionist/menus");
     } finally {
       setSaving(false);

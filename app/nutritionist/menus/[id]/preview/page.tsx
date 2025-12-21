@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Dish, loadDishesFromStorage } from "@/lib/dishes";
+import { Dish, listDishes } from "@/lib/dishes";
 import { Menu, MealSlot, getMenuById } from "@/lib/menus";
 
 const MEAL_SLOTS: { slot: MealSlot; label: string }[] = [
@@ -23,28 +23,66 @@ export default function MenuPreviewPage() {
                 ? params.id[0]
                 : "";
 
-    const allDishes = useMemo<Dish[]>(
-        () => loadDishesFromStorage(),
-        [],
-    );
+    const [menu, setMenu] = useState<Menu | null>(null);
+    const [dishesById, setDishesById] = useState<Map<string, Dish>>(new Map());
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    const menu: Menu | null = useMemo(
-        () => (menuId ? getMenuById(menuId) ?? null : null),
-        [menuId],
-    );
+    useEffect(() => {
+        if (!menuId) {
+            setMenu(null);
+            setDishesById(new Map());
+            setLoading(false);
+            return;
+        }
 
-    const dishesById = useMemo(() => {
-        const map = new Map<string, Dish>();
-        for (const d of allDishes) map.set(d.id, d);
-        return map;
-    }, [allDishes]);
+        let alive = true;
+        (async () => {
+            try {
+                setLoading(true);
+                setError(null);
+                const [m, dishes] = await Promise.all([
+                    getMenuById(menuId),
+                    listDishes(),
+                ]);
+                if (!alive) return;
+                setMenu(m);
+                setDishesById(new Map(dishes.map((d) => [d.id, d])));
+            } catch (e) {
+                if (!alive) return;
+                setError(e instanceof Error ? e.message : "Не удалось загрузить рацион");
+                setMenu(null);
+                setDishesById(new Map());
+            } finally {
+                if (alive) setLoading(false);
+            }
+        })();
+
+        return () => {
+            alive = false;
+        };
+    }, [menuId]);
+
+    const prettyError = error;
+
+    if (loading) {
+        return (
+            <div className="space-y-3">
+                <p className="text-sm text-zinc-500">Загрузка…</p>
+            </div>
+        );
+    }
 
     if (!menu) {
         return (
             <div className="space-y-3">
-                <p className="text-sm text-red-500">
-                    Рацион не найден. Возможно, он был удалён.
-                </p>
+                {prettyError ? (
+                    <p className="text-sm text-red-500">{prettyError}</p>
+                ) : (
+                    <p className="text-sm text-red-500">
+                        Рацион не найден. Возможно, он был удалён.
+                    </p>
+                )}
                 <button
                     type="button"
                     onClick={() => router.push("/nutritionist/menus")}

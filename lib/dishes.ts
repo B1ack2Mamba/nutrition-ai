@@ -1,246 +1,206 @@
 // lib/dishes.ts
-"use client";
 
 import { supabase } from "@/lib/supabaseClient";
-
-/* ===================== Types ===================== */
 
 export type DishCategory = "breakfast" | "lunch" | "dinner" | "snack";
 
 export type DishTag =
-    | "vegan"
-    | "vegetarian"
-    | "gluten_free"
-    | "lactose_free"
-    | "no_added_sugar"
-    | "halal"
-    | "kosher"
-    | "diabetic_friendly";
+  | "vegan"
+  | "vegetarian"
+  | "gluten_free"
+  | "lactose_free"
+  | "no_added_sugar"
+  | "halal"
+  | "kosher"
+  | "diabetic_friendly";
 
 export type Difficulty = "easy" | "medium" | "hard";
 export type IngredientBasis = "raw" | "cooked";
 
 export type Ingredient = {
-    id: string;
-    name: string;
-    amount: string;
-    calories?: number; // ккал для ингредиента (если хочешь)
-    basis?: IngredientBasis; // сырой/готовый
+  id: string;
+  name: string;
+  amount: string;
+  calories?: number;
+  basis?: IngredientBasis;
 };
 
 export type Macros = {
-    calories?: number;
-    protein?: number;
-    fat?: number;
-    carbs?: number;
-    fiber?: number;
+  calories?: number;
+  protein?: number;
+  fat?: number;
+  carbs?: number;
+  fiber?: number;
 };
 
 export type Dish = {
-    id: string;
-    nutritionistId: string;
-
-    title: string;
-    category: DishCategory;
-    timeMinutes?: number;
-    difficulty?: Difficulty;
-
-    ingredients: Ingredient[];
-    macros: Macros;
-    tags: DishTag[];
-
-    instructions?: string;
-    notes?: string;
-    imageUrl?: string;
-
-    createdAt: string;
-    updatedAt: string;
+  id: string;
+  title: string;
+  category: DishCategory;
+  timeMinutes?: number;
+  difficulty?: Difficulty;
+  ingredients: Ingredient[];
+  macros: Macros;
+  tags: DishTag[];
+  instructions?: string;
+  notes?: string;
+  imageUrl?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
-type DishRow = {
-    id: string;
-    nutritionist_id: string;
-
-    title: string;
-    category: string;
-
-    time_minutes: number | null;
-    difficulty: string | null;
-
-    ingredients: unknown; // jsonb
-    macros: unknown; // jsonb
-    tags: string[] | null;
-
-    instructions: string | null;
-    notes: string | null;
-    image_url: string | null;
-
-    created_at: string;
-    updated_at: string;
+export type DishInput = Omit<Dish, "id" | "createdAt" | "updatedAt"> & {
+  id?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
-/* ===================== Guards / Helpers ===================== */
-
-function isDishCategory(x: unknown): x is DishCategory {
-    return x === "breakfast" || x === "lunch" || x === "dinner" || x === "snack";
-}
+type DishDbRow = {
+  id: string;
+  nutritionist_id: string;
+  title: string;
+  category: string;
+  time_minutes: number | null;
+  difficulty: string | null;
+  ingredients: unknown;
+  macros: unknown;
+  tags: string[] | null;
+  instructions: string | null;
+  notes: string | null;
+  image_url: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 function isRecord(v: unknown): v is Record<string, unknown> {
-    return typeof v === "object" && v !== null;
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-function isIngredientBasis(v: unknown): v is IngredientBasis {
-    return v === "raw" || v === "cooked";
+function dishFromRow(row: DishDbRow): Dish {
+  return {
+    id: row.id,
+    title: row.title,
+    category: row.category as DishCategory,
+    timeMinutes: row.time_minutes ?? undefined,
+    difficulty: (row.difficulty as Difficulty) ?? undefined,
+    ingredients: Array.isArray(row.ingredients) ? (row.ingredients as Ingredient[]) : [],
+    macros: isRecord(row.macros) ? (row.macros as Macros) : {},
+    tags: (Array.isArray(row.tags) ? row.tags : []) as DishTag[],
+    instructions: row.instructions ?? undefined,
+    notes: row.notes ?? undefined,
+    imageUrl: row.image_url ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
-function isIngredient(v: unknown): v is Ingredient {
-    if (!isRecord(v)) return false;
-
-    const id = v.id;
-    const name = v.name;
-    const amount = v.amount;
-
-    if (typeof id !== "string" || id.length < 3) return false;
-    if (typeof name !== "string") return false;
-    if (typeof amount !== "string") return false;
-
-    const calories = v.calories;
-    if (
-        calories !== undefined &&
-        !(typeof calories === "number" && Number.isFinite(calories))
-    ) {
-        return false;
-    }
-
-    const basis = v.basis;
-    if (basis !== undefined && !isIngredientBasis(basis)) {
-        return false;
-    }
-
-    return true;
+async function requireUserId(): Promise<string> {
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user) throw new Error("Нет авторизации. Войди в аккаунт.");
+  return data.user.id;
 }
 
-function rowToDish(r: DishRow): Dish {
-    const rawIngredients: unknown[] = Array.isArray(r.ingredients) ? r.ingredients : [];
-    const ingredients: Ingredient[] = rawIngredients
-        .filter(isIngredient)
-        .map((x) => ({
-            id: x.id,
-            name: x.name,
-            amount: x.amount,
-            calories:
-                typeof x.calories === "number" && Number.isFinite(x.calories)
-                    ? x.calories
-                    : undefined,
-            basis: isIngredientBasis(x.basis) ? x.basis : undefined,
-        }));
+// ========= Supabase CRUD =========
 
-    const macros: Macros =
-        r.macros && typeof r.macros === "object" ? (r.macros as Macros) : {};
+export async function listDishes(): Promise<Dish[]> {
+  const userId = await requireUserId();
 
-    const tags: DishTag[] = Array.isArray(r.tags)
-        ? (r.tags as string[]).filter(Boolean) as DishTag[]
-        : [];
+  const { data, error } = await supabase
+    .from("nutritionist_dishes")
+    .select("*")
+    .eq("nutritionist_id", userId)
+    .order("created_at", { ascending: false });
 
-    const category: DishCategory = isDishCategory(r.category)
-        ? r.category
-        : "breakfast";
-
-    return {
-        id: r.id,
-        nutritionistId: r.nutritionist_id,
-
-        title: r.title,
-        category,
-        timeMinutes: r.time_minutes ?? undefined,
-        difficulty: (r.difficulty as Difficulty | null) ?? undefined,
-
-        ingredients,
-        macros,
-        tags,
-
-        instructions: r.instructions ?? undefined,
-        notes: r.notes ?? undefined,
-        imageUrl: r.image_url ?? undefined,
-
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-    };
+  if (error) throw error;
+  const rows = (data ?? []) as DishDbRow[];
+  return rows.map(dishFromRow);
 }
 
-async function requireUserId(): Promise<
-    { ok: true; userId: string } | { ok: false; error: string }
-> {
-    const { data, error } = await supabase.auth.getUser();
-    if (error) return { ok: false, error: error.message };
-    const user = data.user;
-    if (!user) return { ok: false, error: "Нет авторизации" };
-    return { ok: true, userId: user.id };
+export async function getDishById(id: string): Promise<Dish | null> {
+  const userId = await requireUserId();
+
+  const { data, error } = await supabase
+    .from("nutritionist_dishes")
+    .select("*")
+    .eq("id", id)
+    .eq("nutritionist_id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? dishFromRow(data as DishDbRow) : null;
 }
 
-/* ===================== API ===================== */
+export async function createDish(input: DishInput): Promise<Dish> {
+  const userId = await requireUserId();
+  const now = new Date().toISOString();
 
-export async function listMyDishes(): Promise<
-    { ok: true; data: Dish[] } | { ok: false; error: string }
-> {
-    const u = await requireUserId();
-    if (!u.ok) return u;
+  const payload = {
+    id: input.id,
+    nutritionist_id: userId,
+    title: input.title,
+    category: input.category,
+    time_minutes: input.timeMinutes ?? null,
+    difficulty: input.difficulty ?? null,
+    ingredients: input.ingredients ?? [],
+    macros: input.macros ?? {},
+    tags: input.tags ?? [],
+    instructions: input.instructions ?? null,
+    notes: input.notes ?? null,
+    image_url: input.imageUrl ?? null,
+    created_at: input.createdAt ?? now,
+    updated_at: input.updatedAt ?? now,
+  };
 
-    const { data, error } = await supabase
-        .from("nutritionist_dishes")
-        .select("*")
-        .eq("nutritionist_id", u.userId)
-        .order("created_at", { ascending: false });
+  const { data, error } = await supabase
+    .from("nutritionist_dishes")
+    .insert(payload)
+    .select("*")
+    .single();
 
-    if (error) return { ok: false, error: error.message };
-
-    const rows = (data ?? []) as DishRow[];
-    return { ok: true, data: rows.map(rowToDish) };
+  if (error) throw error;
+  return dishFromRow(data as DishDbRow);
 }
 
-export async function createDish(
-    input: Omit<Dish, "nutritionistId" | "createdAt" | "updatedAt">,
-): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-    const u = await requireUserId();
-    if (!u.ok) return u;
+export async function updateDish(id: string, patch: Partial<DishInput>): Promise<Dish> {
+  const userId = await requireUserId();
 
-    const now = new Date().toISOString();
+  const payload: Record<string, unknown> = {
+    title: patch.title,
+    category: patch.category,
+    time_minutes: patch.timeMinutes ?? undefined,
+    difficulty: patch.difficulty ?? undefined,
+    ingredients: patch.ingredients ?? undefined,
+    macros: patch.macros ?? undefined,
+    tags: patch.tags ?? undefined,
+    instructions: patch.instructions ?? undefined,
+    notes: patch.notes ?? undefined,
+    image_url: patch.imageUrl ?? undefined,
+    updated_at: new Date().toISOString(),
+  };
 
-    const payload = {
-        id: input.id,
-        nutritionist_id: u.userId,
-        title: input.title,
-        category: input.category,
-        time_minutes: input.timeMinutes ?? null,
-        difficulty: input.difficulty ?? null,
-        ingredients: input.ingredients ?? [],
-        macros: input.macros ?? {},
-        tags: input.tags ?? [],
-        instructions: input.instructions ?? null,
-        notes: input.notes ?? null,
-        image_url: input.imageUrl ?? null,
-        created_at: now,
-        updated_at: now,
-    };
+  // remove undefined keys so PostgREST doesn't overwrite with null
+  for (const k of Object.keys(payload)) {
+    if (payload[k] === undefined) delete payload[k];
+  }
 
-    const { error } = await supabase.from("nutritionist_dishes").insert(payload);
-    if (error) return { ok: false, error: error.message };
+  const { data, error } = await supabase
+    .from("nutritionist_dishes")
+    .update(payload)
+    .eq("id", id)
+    .eq("nutritionist_id", userId)
+    .select("*")
+    .single();
 
-    return { ok: true, id: input.id };
+  if (error) throw error;
+  return dishFromRow(data as DishDbRow);
 }
 
-export async function deleteDish(
-    id: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-    const u = await requireUserId();
-    if (!u.ok) return u;
-
-    const { error } = await supabase
-        .from("nutritionist_dishes")
-        .delete()
-        .eq("id", id)
-        .eq("nutritionist_id", u.userId);
-
-    if (error) return { ok: false, error: error.message };
-    return { ok: true };
+export async function deleteDish(id: string): Promise<void> {
+  const userId = await requireUserId();
+  const { error } = await supabase
+    .from("nutritionist_dishes")
+    .delete()
+    .eq("id", id)
+    .eq("nutritionist_id", userId);
+  if (error) throw error;
 }
