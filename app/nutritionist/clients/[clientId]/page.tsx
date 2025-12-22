@@ -202,6 +202,17 @@ export default function ClientDetailPage() {
     // Анализы (только просмотр)
     const [labReports, setLabReports] = useState<LabReport[]>([]);
     const [labHint, setLabHint] = useState<string | null>(null);
+
+    const [labUploadOpen, setLabUploadOpen] = useState<boolean>(false);
+    const [labFile, setLabFile] = useState<File | null>(null);
+    const [labTitle, setLabTitle] = useState<string>("");
+    const [labTakenAt, setLabTakenAt] = useState<string>("");
+    const [labBusy, setLabBusy] = useState<boolean>(false);
+    const [labAnalyzingId, setLabAnalyzingId] = useState<string | null>(null);
+    const [labOcrLang, setLabOcrLang] = useState<string>("rus+eng");
+    const [labDetail, setLabDetail] = useState<"short" | "detailed">("short");
+    const [labLastOcr, setLabLastOcr] = useState<string | null>(null);
+
     const [labOpeningId, setLabOpeningId] = useState<string | null>(null);
 
     // Можно / Нельзя
@@ -295,6 +306,177 @@ export default function ClientDetailPage() {
             setLabOpeningId(null);
         }
     }, []);
+
+
+    // ===================== LAB UPLOAD + OCR + DEEPSEEK =====================
+
+    const safeFileName = (name: string) => (name || "file").replace(/[^a-zA-Z0-9._-]+/g, "_");
+
+    const formatLabAnalysis = (analysis: any) => {
+        if (!analysis) return "Разбор недоступен.";
+
+        // deepseekJson может вернуть объект с полем raw/error — но чаще вернёт уже JSON
+        const a: any = analysis?.raw ? analysis : analysis;
+
+        const lines: string[] = [];
+
+        if (a.short_summary) {
+            lines.push(`Коротко: ${String(a.short_summary).trim()}`);
+        }
+
+        const list = (title: string, items?: any) => {
+            if (!Array.isArray(items) || items.length === 0) return;
+            lines.push("");
+            lines.push(title);
+            for (const it of items) lines.push(`- ${String(it).trim()}`);
+        };
+
+        list("Ключевые моменты:", a.key_findings);
+        list("Возможные причины (гипотезы):", a.possible_causes);
+        list("Питание/образ жизни:", a.nutrition_notes);
+        list("Что уточнить у врача/лаборатории:", a.questions_for_doctor);
+        list("Красные флаги (повод обсудить с врачом):", a.red_flags);
+
+        lines.push("");
+        lines.push(a.disclaimer || "Важно: это информационный разбор, не диагноз и не медицинское назначение.");
+
+        return lines.join("\n");
+    };
+
+    const analyzeLabReport = useCallback(
+        async (r: LabReport) => {
+            setLabHint(null);
+            setLabLastOcr(null);
+            setLabAnalyzingId(r.id);
+
+            try {
+                const { data: signed, error: signErr } = await supabase.storage
+                    .from("lab_reports")
+                    .createSignedUrl(r.file_path, 60 * 10);
+
+                if (signErr || !signed?.signedUrl) {
+                    setLabHint(
+                        "Не удалось получить доступ к файлу (signed url). Проверь bucket lab_reports и права доступа."
+                    );
+                    return;
+                }
+
+                const resp = await fetch("/api/ai/lab-report", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        signedUrl: signed.signedUrl,
+                        ocrLang: labOcrLang,
+                        detail: labDetail,
+                    }),
+                });
+
+                const json = await resp.json().catch(() => ({}));
+                if (!resp.ok) {
+                    setLabHint(json?.error || "Ошибка анализа файла.");
+                    return;
+                }
+
+                if (json?.ocrText) setLabLastOcr(String(json.ocrText));
+
+                const ai_summary = formatLabAnalysis(json?.analysis);
+
+                const { error: updErr } = await supabase
+                    .from("client_lab_reports")
+                    .update({ ai_summary })
+                    .eq("id", r.id);
+
+                if (updErr) {
+                    setLabHint(`Разбор готов, но не удалось сохранить в базе: ${updErr.message}`);
+                    return;
+                }
+
+                await reloadLabReports();
+            } catch (e: any) {
+                setLabHint(e?.message || "Ошибка анализа.");
+            } finally {
+                setLabAnalyzingId(null);
+            }
+        },
+        [clientId, labDetail, labOcrLang, reloadLabReports],
+    );
+
+    const uploadAndAnalyzeNewLabReport = useCallback(async () => {
+        setLabHint(null);
+        setLabLastOcr(null);
+
+        if (!labFile) {
+            setLabHint("Выбери изображение (png/jpg/webp).");
+            return;
+        }
+
+        const isImage = labFile.type?.startsWith("image/");
+        if (!isImage) {
+            setLabHint("Пока поддерживаются только изображения. Если анализ в PDF — сделай скриншот и загрузи как картинку.");
+            return;
+        }
+
+        setLabBusy(true);
+        try {
+            const { data: auth } = await supabase.auth.getUser();
+            const me = auth?.user;
+            if (!me) {
+                setLabHint("Нужно войти как специалист.");
+                return;
+            }
+
+            const path = `${clientId}/${me.id}/${Date.now()}_${safeFileName(labFile.name)}`;
+
+            const { error: upErr } = await supabase.storage.from("lab_reports").upload(path, labFile, {
+                cacheControl: "3600",
+                upsert: false,
+                contentType: labFile.type || "application/octet-stream",
+            });
+
+            if (upErr) {
+                setLabHint(`Не удалось загрузить файл: ${upErr.message}`);
+                return;
+            }
+
+            const title = (labTitle || labFile.name).trim();
+
+            const { data: row, error: insErr } = await supabase
+                .from("client_lab_reports")
+                .insert({
+                    client_id: clientId,
+                    nutritionist_id: me.id,
+                    title,
+                    taken_at: labTakenAt || null,
+                    file_path: path,
+                    file_url: null,
+                    ai_summary: null,
+                })
+                .select("*")
+                .single();
+
+            if (insErr || !row) {
+                setLabHint(`Файл загружен, но запись в таблицу не создалась: ${insErr?.message || "unknown"}`);
+                return;
+            }
+
+            await reloadLabReports();
+
+            // Закрываем модалку — и сразу запускаем разбор
+            setLabUploadOpen(false);
+            setLabFile(null);
+            setLabTitle("");
+            setLabTakenAt("");
+
+            await analyzeLabReport(row as LabReport);
+        } catch (e: any) {
+            setLabHint(e?.message || "Ошибка загрузки анализа.");
+        } finally {
+            setLabBusy(false);
+        }
+    }, [analyzeLabReport, clientId, labFile, labTakenAt, labTitle, reloadLabReports]);
+
+    // =======================================================================
+
 
     const reloadFoodRules = useCallback(
         async (nutritionistId: string) => {
@@ -703,9 +885,17 @@ export default function ClientDetailPage() {
 
     return (
         <div className="space-y-6">
-            <header>
-                <h2 className="text-2xl font-semibold tracking-tight">Клиент: {basic.full_name ?? basic.id}</h2>
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">Цель → активный рацион → можно/нельзя → прогресс → дневник → анализы.</p>
+            <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div className="space-y-1">
+                    <h2 className="text-2xl font-semibold tracking-tight">Клиент: {basic.full_name ?? basic.id}</h2>
+                    <p className="text-sm text-zinc-600 dark:text-zinc-400">Цель → активный рацион → можно/нельзя → прогресс → дневник → анализы.</p>
+                </div>
+                <Link
+                    href={`/nutritionist/chat/${basic.id}`}
+                    className="inline-flex items-center justify-center rounded-full bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                >
+                    Чат
+                </Link>
             </header>
 
             {/* РЕЗЮМЕ */}
@@ -1207,26 +1397,179 @@ export default function ClientDetailPage() {
                 )}
             </section>
 
-            {/* Анализы (только просмотр) */}
+            {/* Анализы */}
             <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
                 <div className="flex items-start justify-between gap-3">
                     <div>
-                        <h3 className="text-sm font-semibold">Анализы клиента (файлы)</h3>
-                        <p className="mt-1 text-xs text-zinc-500">Клиент загружает анализы у себя. Здесь — только просмотр.</p>
+                        <h3 className="text-sm font-semibold">Анализы клиента</h3>
+                        <p className="mt-1 text-xs text-zinc-500">
+                            Загрузка → OCR → разбор DeepSeek → сохранение. Большинство настроек спрятаны в «Дополнительно».
+                        </p>
                     </div>
 
-                    <button
-                        type="button"
-                        onClick={reloadLabReports}
-                        className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                    >
-                        Обновить
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setLabHint(null);
+                                setLabUploadOpen(true);
+                            }}
+                            className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                        >
+                            + Загрузить
+                        </button>
+                        <button
+                            type="button"
+                            onClick={reloadLabReports}
+                            className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                        >
+                            Обновить
+                        </button>
+                    </div>
                 </div>
 
                 {labHint ? (
                     <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                         {labHint}
+                    </div>
+                ) : null}
+
+                {labUploadOpen ? (
+                    <div
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+                        onClick={() => setLabUploadOpen(false)}
+                    >
+                        <div
+                            className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl dark:bg-zinc-950"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <h3 className="text-lg font-semibold">Новый анализ</h3>
+                                    <p className="mt-1 text-xs text-zinc-500">
+                                        Лучше всего — ровное фото без бликов (или скриншот).
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                                    onClick={() => setLabUploadOpen(false)}
+                                >
+                                    Закрыть
+                                </button>
+                            </div>
+
+                            <div className="mt-4 grid gap-3">
+                                <label className="grid gap-1 text-sm">
+                                    <span className="text-zinc-700 dark:text-zinc-200">Файл</span>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="w-full rounded-md border p-2 text-sm"
+                                        onChange={(e) => {
+                                            const f = e.target.files?.[0] || null;
+                                            setLabFile(f);
+                                            if (f && !labTitle) setLabTitle(f.name);
+                                        }}
+                                    />
+                                </label>
+
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <label className="grid gap-1 text-sm">
+                                        <span className="text-zinc-700 dark:text-zinc-200">Название</span>
+                                        <input
+                                            className="rounded-md border px-3 py-2 text-sm"
+                                            value={labTitle}
+                                            onChange={(e) => setLabTitle(e.target.value)}
+                                            placeholder="Например: Общий анализ крови"
+                                        />
+                                    </label>
+
+                                    <label className="grid gap-1 text-sm">
+                                        <span className="text-zinc-700 dark:text-zinc-200">Дата (опционально)</span>
+                                        <input
+                                            type="date"
+                                            className="rounded-md border px-3 py-2 text-sm"
+                                            value={labTakenAt}
+                                            onChange={(e) => setLabTakenAt(e.target.value)}
+                                        />
+                                    </label>
+                                </div>
+
+                                <details className="rounded-md border p-3">
+                                    <summary className="cursor-pointer select-none text-sm text-zinc-700 dark:text-zinc-200">
+                                        Дополнительно
+                                    </summary>
+                                    <div className="mt-3 grid gap-3">
+                                        <label className="grid gap-1 text-sm">
+                                            <span className="text-zinc-700 dark:text-zinc-200">Язык OCR</span>
+                                            <input
+                                                className="rounded-md border px-3 py-2 text-sm"
+                                                value={labOcrLang}
+                                                onChange={(e) => setLabOcrLang(e.target.value)}
+                                                placeholder="rus+eng"
+                                            />
+                                            <span className="text-[11px] text-zinc-500">
+                                                Обычно хватает: <b>rus+eng</b>
+                                            </span>
+                                        </label>
+
+                                        <label className="grid gap-1 text-sm">
+                                            <span className="text-zinc-700 dark:text-zinc-200">Детализация</span>
+                                            <select
+                                                className="rounded-md border px-3 py-2 text-sm"
+                                                value={labDetail}
+                                                onChange={(e) =>
+                                                    setLabDetail(e.target.value as "short" | "detailed")
+                                                }
+                                            >
+                                                <option value="short">Коротко</option>
+                                                <option value="detailed">Чуть подробнее</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                </details>
+
+                                <div className="mt-1 flex items-center justify-between gap-3">
+                                    <div className="text-xs text-zinc-500">
+                                        {labFile ? (
+                                            <>
+                                                Выбрано:{" "}
+                                                <span className="text-zinc-700 dark:text-zinc-200">
+                                                    {labFile.name}
+                                                </span>
+                                            </>
+                                        ) : (
+                                            "Выбери изображение."
+                                        )}
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        disabled={labBusy || !labFile}
+                                        className="rounded-full bg-black px-4 py-2 text-sm text-white disabled:opacity-50"
+                                        onClick={uploadAndAnalyzeNewLabReport}
+                                    >
+                                        {labBusy ? "Обрабатываю…" : "Загрузить и разобрать"}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {labHint ? (
+                                <p className="mt-3 text-sm text-red-600">{labHint}</p>
+                            ) : null}
+
+                            {labLastOcr ? (
+                                <details className="mt-4 rounded-md border p-3">
+                                    <summary className="cursor-pointer select-none text-sm text-zinc-700 dark:text-zinc-200">
+                                        Показать OCR (для проверки)
+                                    </summary>
+                                    <div className="mt-2 whitespace-pre-wrap text-xs text-zinc-800 dark:text-zinc-100">
+                                        {labLastOcr}
+                                    </div>
+                                </details>
+                            ) : null}
+                        </div>
                     </div>
                 ) : null}
 
@@ -1254,12 +1597,16 @@ export default function ClientDetailPage() {
                                         </div>
 
                                         {r.ai_summary ? (
-                                            <div className="mt-2 rounded-lg bg-white p-2 text-[11px] text-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-                                                {r.ai_summary}
-                                            </div>
+                                            <details className="mt-2 rounded-lg bg-white p-2 text-[11px] text-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+                                                <summary className="cursor-pointer select-none font-medium text-zinc-700 dark:text-zinc-200">
+                                                    Разбор (DeepSeek)
+                                                </summary>
+                                                <div className="mt-2 whitespace-pre-wrap">{r.ai_summary}</div>
+                                            </details>
                                         ) : null}
                                     </div>
 
+                                    <div className="flex flex-col items-end gap-2">
                                     <button
                                         type="button"
                                         onClick={() => openLabReport(r)}
@@ -1268,6 +1615,21 @@ export default function ClientDetailPage() {
                                     >
                                         {labOpeningId === r.id ? "Открываю..." : "Открыть файл"}
                                     </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => analyzeLabReport(r)}
+                                        disabled={labAnalyzingId === r.id}
+                                        className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-[11px] text-zinc-700 hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                                        title="OCR + разбор через DeepSeek"
+                                    >
+                                        {labAnalyzingId === r.id
+                                            ? "Разбираю…"
+                                            : r.ai_summary
+                                              ? "Переразобрать"
+                                              : "Сделать разбор"}
+                                    </button>
+                                </div>
                                 </div>
                             </div>
                         ))}

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 /* ===================== Types ===================== */
@@ -109,13 +110,19 @@ async function listFolder(bucket: string, folderPath: string, limit = 200): Prom
 /* ===================== Page ===================== */
 
 export default function ClientSpecialistsPage() {
+  const router = useRouter();
   const BUCKET_BG = "nutritionist_backgrounds";
   const BUCKET_DOCS = "nutritionist_documents";
 
   const [loading, setLoading] = useState(true);
   const [fatal, setFatal] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [userId, setUserId] = useState<string | null>(null);
+
+  // выбранный пользователем "основной" нутрициолог (хранится в client_profiles.selected_nutritionist_id)
+  const [primaryNutId, setPrimaryNutId] = useState<string | null>(null);
+  const [savingPrimary, setSavingPrimary] = useState<string | null>(null);
 
   const [links, setLinks] = useState<LinkRow[]>([]);
   const [nutMap, setNutMap] = useState<Record<string, NutritionistBasic>>({});
@@ -136,6 +143,15 @@ export default function ClientSpecialistsPage() {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const badgeTokens = useMemo(() => splitBadges(nutProfile?.badges), [nutProfile?.badges]);
+
+  const selectedLink = useMemo(() => {
+    if (!selectedNutId) return null;
+    // links уже отсортированы по created_at desc, поэтому первый найденный — самый свежий
+    return links.find((l) => l.nutritionist_id === selectedNutId) ?? null;
+  }, [links, selectedNutId]);
+
+  const isPrimary = Boolean(selectedNutId && primaryNutId && selectedNutId === primaryNutId);
+  const canMakePrimary = selectedLink?.status === "approved";
 
   const loadNutritionistDetails = useCallback(
     async (nid: string) => {
@@ -172,6 +188,33 @@ export default function ClientSpecialistsPage() {
     [BUCKET_BG, BUCKET_DOCS]
   );
 
+  const setPrimaryNutritionist = useCallback(
+    async (nid: string) => {
+      if (!userId) return;
+
+      setNotice(null);
+      setSavingPrimary(nid);
+      try {
+        // Пишем в client_profiles, чтобы не зависеть от localStorage и не ковырять связи.
+        // Важно: upsert в PostgREST обновит только переданные поля (merge).
+        const { error } = await supabase
+          .from("client_profiles")
+          .upsert({ user_id: userId, selected_nutritionist_id: nid }, { onConflict: "user_id" });
+
+        if (error) {
+          setNotice(`Не получилось сохранить выбранного специалиста: ${error.message}`);
+          return;
+        }
+
+        setPrimaryNutId(nid);
+        setNotice("Готово: специалист выбран как основной.");
+      } finally {
+        setSavingPrimary(null);
+      }
+    },
+    [userId]
+  );
+
   const loadInitial = useCallback(async () => {
     // ❗️ВАЖНО: никаких setState ДО первого await (это и убирает твой ESLint error)
     const { data, error } = await supabase.auth.getUser();
@@ -183,6 +226,16 @@ export default function ClientSpecialistsPage() {
     }
 
     const uid = data.user.id;
+
+    // 0) Какого специалиста пользователь выбрал «основным» (если выбирал)
+    const profRes = await supabase
+      .from("client_profiles")
+      .select("selected_nutritionist_id")
+      .eq("user_id", uid)
+      .limit(1);
+
+    const savedPrimary = (profRes.data?.[0] as { selected_nutritionist_id?: string | null } | undefined)
+      ?.selected_nutritionist_id ?? null;
 
     const linksRes = await supabase
       .from("client_nutritionist_links")
@@ -211,12 +264,14 @@ export default function ClientSpecialistsPage() {
 
     setUserId(uid);
     setLinks(rows);
+    setPrimaryNutId(savedPrimary);
 
     setNutMap(map);
     nutMapRef.current = map;
 
+    const fromSaved = savedPrimary ? rows.find((r) => r.nutritionist_id === savedPrimary) : undefined;
     const firstApproved = rows.find((r) => r.status === "approved");
-    const first = firstApproved ?? rows[0] ?? null;
+    const first = fromSaved ?? firstApproved ?? rows[0] ?? null;
 
     if (first?.nutritionist_id) {
       await loadNutritionistDetails(first.nutritionist_id);
@@ -303,6 +358,12 @@ export default function ClientSpecialistsPage() {
         </div>
       </header>
 
+      {notice ? (
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+          {notice}
+        </div>
+      ) : null}
+
       {/* specialists list */}
       <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
         <div className="text-sm font-semibold">Список</div>
@@ -315,6 +376,7 @@ export default function ClientSpecialistsPage() {
               const n = nutMap[nid];
               const active = nid === selectedNutId;
               const lastLink = links.find((x) => x.nutritionist_id === nid) ?? null;
+              const isPrimary = primaryNutId === nid;
 
               return (
                 <button
@@ -328,9 +390,21 @@ export default function ClientSpecialistsPage() {
                       : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900")
                   }
                 >
-                  <div className="truncate text-sm font-semibold">{n?.full_name ?? nid}</div>
+                  <div className="truncate text-sm font-semibold">
+                    {n?.full_name ?? nid}
+                    {isPrimary ? (
+                      <span className="ml-2 inline-flex items-center rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
+                        основной
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
                     статус: <b>{lastLink?.status ?? "—"}</b> · {formatDateTime(lastLink?.created_at)}
+                    {primaryNutId === nid ? (
+                      <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+                        основной
+                      </span>
+                    ) : null}
                   </div>
                 </button>
               );
@@ -369,6 +443,46 @@ export default function ClientSpecialistsPage() {
                 {nutProfile?.headline?.trim() ? (
                   <div className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{nutProfile.headline}</div>
                 ) : null}
+
+                {/* выбор основного специалиста */}
+                {!canMakePrimary ? (
+                  <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+                    Чтобы сделать специалиста основным, нужна подтверждённая связь (статус <b>approved</b>). Сейчас: {" "}
+                    <b>{selectedLink?.status ?? "—"}</b>.
+                  </div>
+                ) : (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {isPrimary ? (
+                      <>
+                        <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-semibold text-white dark:bg-zinc-100 dark:text-black">
+                          Мой основной специалист
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => router.push("/client/chat")}
+                          className="rounded-full border border-zinc-300 px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                        >
+                          Чат
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={savingPrimary === selectedNutId}
+                        onClick={() => void setPrimaryNutritionist(selectedNutId)}
+                        className="rounded-full bg-black px-4 py-2 text-xs font-semibold text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                      >
+                        {savingPrimary === selectedNutId ? "Сохраняю…" : "Сделать основным"}
+                      </button>
+                    )}
+
+                    {!isPrimary ? (
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Выбранный основной специалист используется по умолчанию в сервисах и чате.
+                      </span>
+                    ) : null}
+                  </div>
+                )}
 
                 {badgeTokens.length ? (
                   <div className="mt-3 flex flex-wrap gap-2">
