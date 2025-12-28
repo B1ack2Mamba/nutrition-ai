@@ -19,6 +19,7 @@ type ExtendedProfile = {
     banned_foods: string | null;
     preferences: string | null;
     monthly_budget: number | null;
+    intake_form?: any | null;
 };
 
 type Assignment = {
@@ -43,6 +44,7 @@ type JournalEntry = {
     energy_level: number | null;
     mood: number | null;
     notes: string | null;
+    food_diary?: any | null;
 };
 
 type LabReport = {
@@ -957,6 +959,27 @@ export default function ClientDetailPage() {
                 ) : null}
             </section>
 
+            {/* Анкета клиента (из профиля) */}
+            <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+                <div>
+                    <h3 className="text-sm font-semibold">Анкета клиента</h3>
+                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Заполняется клиентом в разделе профиля. Здесь можно быстро посмотреть ответы.</p>
+                </div>
+
+                {extended?.intake_form ? (
+                    <details className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
+                        <summary className="cursor-pointer select-none text-xs font-medium text-zinc-700 dark:text-zinc-200">
+                            Показать ответы (JSON)
+                        </summary>
+                        <pre className="mt-3 max-h-[420px] overflow-auto rounded-lg bg-white p-3 text-[11px] leading-relaxed text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
+                            {JSON.stringify(extended.intake_form, null, 2)}
+                        </pre>
+                    </details>
+                ) : (
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400">Анкета ещё не заполнена.</div>
+                )}
+            </section>
+
             {/* Назначение рациона + Можно/Нельзя */}
             <section className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
                 <div className="flex items-start justify-between gap-3">
@@ -1397,7 +1420,108 @@ export default function ClientDetailPage() {
                 )}
             </section>
 
-            {/* Анализы */}
+            
+
+            {/* Дневник питания */}
+            <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+                <h3 className="text-sm font-semibold">Дневник питания (таблица строк)</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Формат: время → блюда → количество → причина → ощущения → БАДы/лекарства.
+                </p>
+
+                {filteredJournal.filter((e) => e.food_diary != null).length === 0 ? (
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400">Нет записей дневника питания за выбранный период.</div>
+                ) : (
+                    <div className="space-y-2">
+                        {filteredJournal
+                            .filter((e) => e.food_diary != null)
+                            .map((e) => {
+                                const d: any = e.food_diary ?? {};
+                                const rows = Array.isArray(d?.rows) ? d.rows : [];
+                                const wake = d?.wake_time ?? d?.wakeTime ?? "";
+                                const bed = d?.bed_time ?? d?.bedTime ?? "";
+                                const waterBalance = d?.water_balance ?? d?.waterBalance ?? d?.water_liters ?? d?.waterLiters ?? "";
+                                const sleepNote = d?.sleep_note ?? d?.sleepNote ?? "";
+
+                                return (
+                                    <details
+                                        key={e.id}
+                                        className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900"
+                                    >
+                                        <summary className="cursor-pointer select-none text-xs font-medium text-zinc-700 dark:text-zinc-200">
+                                            {new Date(e.entry_date).toLocaleDateString()} — строк: {rows.length}
+                                            {wake ? ` · подъем: ${wake}` : ""}
+                                            {bed ? ` · сон: ${bed}` : ""}
+                                            {waterBalance ? ` · вода: ${waterBalance}` : ""}
+                                        </summary>
+
+                                        {rows.length > 0 ? (
+                                            <div className="mt-3 overflow-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-950">
+                                                <table className="min-w-full border-collapse">
+                                                    <thead className="bg-zinc-50 dark:bg-zinc-900">
+                                                        <tr>
+                                                            <th className="px-2 py-2 text-left font-medium">Время</th>
+                                                            <th className="px-2 py-2 text-left font-medium">Блюдо, продукты</th>
+                                                            <th className="px-2 py-2 text-left font-medium">Количество</th>
+                                                            <th className="px-2 py-2 text-left font-medium">Причина</th>
+                                                            <th className="px-2 py-2 text-left font-medium">Ощущение</th>
+                                                            <th className="px-2 py-2 text-left font-medium">БАДы/лекарства</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {rows.map((r: any, idx: number) => {
+                                                            const time = r?.time ?? "";
+                                                            const dish = `${r?.slot ? `${r.slot}: ` : ""}${r?.dish ?? ""}`;
+                                                            const amount = r?.amount ?? "";
+                                                            const reason = r?.reason ?? r?.cause ?? "";
+                                                            const feeling = r?.feeling ?? r?.sensation ?? "";
+                                                            const supplements = r?.supplements ?? r?.meds ?? "";
+                                                            return (
+                                                                <tr key={String(r?.id ?? idx)} className="border-t border-zinc-100 dark:border-zinc-800">
+                                                                    <td className="px-2 py-2">{time}</td>
+                                                                    <td className="px-2 py-2">{dish}</td>
+                                                                    <td className="px-2 py-2">{amount}</td>
+                                                                    <td className="px-2 py-2">{reason}</td>
+                                                                    <td className="px-2 py-2">{feeling}</td>
+                                                                    <td className="px-2 py-2">{supplements}</td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">Строк нет.</div>
+                                        )}
+
+                                        {(sleepNote || wake || bed || waterBalance) ? (
+                                            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                                                <div className="rounded-lg border border-zinc-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-950">
+                                                    <div className="text-[11px] text-zinc-500">Время подъема</div>
+                                                    <div className="mt-1 text-xs">{wake || "—"}</div>
+                                                </div>
+                                                <div className="rounded-lg border border-zinc-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-950">
+                                                    <div className="text-[11px] text-zinc-500">Время отхода ко сну</div>
+                                                    <div className="mt-1 text-xs">{bed || "—"}</div>
+                                                </div>
+                                                <div className="rounded-lg border border-zinc-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-950">
+                                                    <div className="text-[11px] text-zinc-500">Водный баланс</div>
+                                                    <div className="mt-1 whitespace-pre-wrap text-xs">{waterBalance || "—"}</div>
+                                                </div>
+                                                <div className="rounded-lg border border-zinc-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-950 sm:col-span-3">
+                                                    <div className="text-[11px] text-zinc-500">Комментарий про сон</div>
+                                                    <div className="mt-1 whitespace-pre-wrap text-xs">{sleepNote || "—"}</div>
+                                                </div>
+                                            </div>
+                                        ) : null}
+                                    </details>
+                                );
+                            })}
+                    </div>
+                )}
+            </section>
+
+{/* Анализы */}
             <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
                 <div className="flex items-start justify-between gap-3">
                     <div>

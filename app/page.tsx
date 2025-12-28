@@ -28,12 +28,12 @@ export default function HomePage() {
 
                     <Link
                         href="/client/menus"
-                        className="block rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm transition hover:bg-zinc-100 dark:border-zinc-700 dark:bg-зinc-900 dark:hover:bg-zinc-800"
+                        className="block rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm transition hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
                     >
                         <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
                             Я клиент
                         </h2>
-                        <p className="mt-1 text-sm text-зinc-600 dark:text-зinc-400">
+                        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
                             Просмотр ваших назначенных рационов
                         </p>
                     </Link>

@@ -287,7 +287,7 @@ export default function EditMenuPage() {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-зinc-700 dark:focus:border-zinc-200"
+              className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
             />
           </label>
         </section>

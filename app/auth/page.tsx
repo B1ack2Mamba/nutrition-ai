@@ -179,7 +179,7 @@ export default function AuthPage() {
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             required
-                            className="rounded-lg border border-зinc-300 bg-transparent px-3 py-2 outline-none focus:border-зinc-900 dark:border-зinc-700 dark:focus:border-зinc-200"
+                            className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
                         />
                     </label>
 
@@ -190,12 +190,12 @@ export default function AuthPage() {
                                 <input
                                     value={fullName}
                                     onChange={(e) => setFullName(e.target.value)}
-                                    className="rounded-lg border border-зinc-300 bg-transparent px-3 py-2 outline-none focus:border-зinc-900 dark:border-зinc-700 dark:focus:border-зinc-200"
+                                    className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
                                 />
                             </label>
 
-                            <fieldset className="mt-2 space-y-1 rounded-lg border border-зinc-200 p-3 dark:border-зinc-700">
-                                <legend className="px-1 text-xs font-medium text-зinc-500 dark:text-зinc-400">
+                            <fieldset className="mt-2 space-y-1 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
+                                <legend className="px-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
                                     Роль
                                 </legend>
                                 <div className="flex flex-col gap-1 text-xs">
@@ -228,10 +228,10 @@ export default function AuthPage() {
                                     <input
                                         value={inviteCode}
                                         onChange={(e) => setInviteCode(e.target.value)}
-                                        className="rounded-lg border border-зinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-зinc-900 dark:border-зinc-700 dark:focus:border-зinc-200"
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
                                         placeholder="Введи код, который выдал администратор"
                                     />
-                                    <p className="mt-1 text-[11px] text-зinc-500 dark:text-зinc-500">
+                                    <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-500">
                                         Без корректного кода аккаунт будет создан только как
                                         клиентский.
                                     </p>

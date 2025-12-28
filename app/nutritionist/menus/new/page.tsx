@@ -168,7 +168,7 @@ export default function NewMenuPage() {
                         <select
                             value={daysCount}
                             onChange={(e) => handleDaysCountChange(e.target.value)}
-                            className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-зinc-200"
+                            className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
                         >
                             <option value={7}>7 дней</option>
                             <option value={14}>14 дней</option>
@@ -189,7 +189,7 @@ export default function NewMenuPage() {
                                         : Number(e.target.value),
                                 )
                             }
-                            className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-зinc-700 dark:focus:border-зinc-200"
+                            className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
                         />
                     </label>
                 </section>
@@ -202,7 +202,7 @@ export default function NewMenuPage() {
                             onChange={(e) => setDescription(e.target.value)}
                             rows={3}
                             placeholder="Кому подходит, особенности, на что обратить внимание."
-                            className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-зinc-700 dark:focus:border-зinc-200"
+                            className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
                         />
                     </label>
                 </section>
@@ -276,7 +276,7 @@ export default function NewMenuPage() {
                     <button
                         type="submit"
                         disabled={saving || dishes.length === 0}
-                        className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-зinc-200"
+                        className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
                     >
                         {saving ? "Сохраняю..." : "Сохранить рацион"}
                     </button>

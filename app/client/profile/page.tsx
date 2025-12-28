@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState, ChangeEvent, useCallback } from "react";
+import { FormEvent, useEffect, useState, ChangeEvent, useCallback, type ReactNode } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 type ClientProfile = {
@@ -11,6 +11,7 @@ type ClientProfile = {
     banned_foods: string | null;
     preferences: string | null;
     monthly_budget: number | null;
+    intake_form?: Record<string, any> | null;
 };
 
 type Nutritionist = {
@@ -50,6 +51,31 @@ function safeFileName(name: string): string {
     return name.replace(/[^\w.\-()]+/g, "_");
 }
 
+const FREQ5 = ["Никогда", "Очень редко", "Редко", "Периодически", "Регулярно"] as const;
+type Freq5 = (typeof FREQ5)[number];
+
+const MOOD_FREQ4 = ["Никогда", "Редко", "Иногда", "Постоянно"] as const;
+type MoodFreq4 = (typeof MOOD_FREQ4)[number];
+
+const FOOD_FREQ_ITEMS = ["Макароны", "Крупы", "Овощи", "Мясо", "Рыба", "Птица", "Фаст фуд"];
+const DRINK_FREQ_ITEMS = ["Газированные напитки", "Минеральная вода", "Соки", "Молоко", "Кисломолочные напитки", "Какао"];
+const MOOD_ITEMS = ["Вялость", "Апатия", "Грусть", "Агрессия", "Тревога", "Радость и эйфория", "Спокойное гармоничное состояние"];
+const LIFE_SPHERES = ["Карьера", "Финансы", "Друзья", "Семья", "Здоровье", "Отдых", "Условия жизни", "Рост (развитие, достижения)"];
+
+function Section({ title, children, defaultOpen = false }: { title: string; children: ReactNode; defaultOpen?: boolean }) {
+    return (
+        <details
+            open={defaultOpen}
+            className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+        >
+            <summary className="cursor-pointer select-none text-sm font-semibold">{title}</summary>
+            <div className="mt-4 space-y-3">{children}</div>
+        </details>
+    );
+}
+
+type Intake = Record<string, any>;
+
 export default function ClientProfilePage() {
     const [loading, setLoading] = useState(true);
     const [savingProfile, setSavingProfile] = useState(false);
@@ -62,6 +88,12 @@ export default function ClientProfilePage() {
 
     const [error, setError] = useState<string | null>(null);
     const [userId, setUserId] = useState<string | null>(null);
+
+    // ===== Анкета (intake) =====
+    const [intake, setIntake] = useState<Intake>({});
+    const [showIntake, setShowIntake] = useState(false);
+    const [savingIntake, setSavingIntake] = useState(false);
+    const [intakeHint, setIntakeHint] = useState<string | null>(null);
 
     // ===== Анализы (файлы) =====
     const [labReports, setLabReports] = useState<LabReport[]>([]);
@@ -237,8 +269,12 @@ export default function ClientProfilePage() {
                     banned_foods: "",
                     preferences: "",
                     monthly_budget: null,
+                    intake_form: null,
                 }
             );
+
+            setIntake((existingProfile?.intake_form ?? {}) as Intake);
+            setShowIntake(!!existingProfile?.intake_form);
 
             // 2) Список нутрициологов
             const { data: nutrs, error: nutrsError } = await supabase
@@ -294,6 +330,29 @@ export default function ClientProfilePage() {
         }
     };
 
+    const handleSaveIntake = async () => {
+        if (!userId) return;
+        setSavingIntake(true);
+        setError(null);
+        setIntakeHint(null);
+
+        try {
+            const { error: upsertError } = await supabase
+                .from("client_profiles")
+                .upsert({ user_id: userId, intake_form: intake }, { onConflict: "user_id" });
+
+            if (upsertError) {
+                setError(upsertError.message);
+                return;
+            }
+
+            setIntakeHint("Анкета сохранена.");
+            setShowIntake(true);
+        } finally {
+            setSavingIntake(false);
+        }
+    };
+
     const handleSendRequest = async () => {
         if (!userId || !selectedNutritionistId) return;
         if (link && link.status === "pending") {
@@ -335,6 +394,27 @@ export default function ClientProfilePage() {
     }
 
     const currentNutritionist = link && nutritionists.find((n) => n.id === link.nutritionist_id);
+
+    const getStr = (key: string) => {
+        const v = (intake ?? {})[key];
+        return typeof v === "string" || typeof v === "number" ? String(v) : "";
+    };
+
+    const setStr = (key: string, value: string) => {
+        setIntake((prev) => ({ ...(prev ?? {}), [key]: value }));
+    };
+
+    const getMap = (group: string): Record<string, any> => {
+        const v = (intake ?? {})[group];
+        return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, any>) : {};
+    };
+
+    const setMapValue = (group: string, k: string, value: any) => {
+        setIntake((prev) => ({
+            ...(prev ?? {}),
+            [group]: { ...(getMap(group) ?? {}), [k]: value },
+        }));
+    };
 
     return (
         <div className="space-y-6">
@@ -441,141 +521,725 @@ export default function ClientProfilePage() {
                 </button>
             </form>
 
-            {/* ✅ Анализы (перенесено сюда) */}
+            {/* Анкета */}
             <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                        <h3 className="text-sm font-semibold">Анализы (файлы)</h3>
+                        <h3 className="text-sm font-semibold">Анкета клиента</h3>
                         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                            Загрузи PDF или фото. Специалист увидит это в твоей карточке.
+                            Большая анкета — свёрнутые блоки. Можно заполнять/редактировать в любой момент.
                         </p>
                     </div>
 
-                    {userId ? (
-                        <button
-                            type="button"
-                            onClick={() => reloadLabReports(userId)}
-                            className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                        >
-                            Обновить
-                        </button>
-                    ) : null}
-                </div>
-
-                {labHint ? (
-                    <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                        {labHint}
-                    </div>
-                ) : null}
-
-                <div className="grid gap-3 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900 sm:grid-cols-3">
-                    <label className="flex flex-col gap-1 text-xs">
-                        Название
-                        <input
-                            value={labTitle}
-                            onChange={(e) => setLabTitle(e.target.value)}
-                            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
-                            placeholder="ОАК / Биохимия / Витамин D..."
-                        />
-                    </label>
-
-                    <label className="flex flex-col gap-1 text-xs">
-                        Дата сдачи
-                        <input
-                            type="date"
-                            value={labTakenAt}
-                            onChange={(e) => setLabTakenAt(e.target.value)}
-                            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
-                        />
-                    </label>
-
-                    <div className="flex flex-col gap-1 text-xs">
-                        Файл (PDF/JPG/PNG)
-                        <input
-                            type="file"
-                            accept=".pdf,image/*"
-                            onChange={handlePickLabFile}
-                            disabled={labUploading}
-                            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-950"
-                        />
-
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2">
+                        {!showIntake ? (
                             <button
                                 type="button"
-                                onClick={handleUploadLab}
-                                disabled={labUploading || !labFile}
-                                className="rounded-full bg-black px-4 py-2 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                                onClick={() => setShowIntake(true)}
+                                className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
                             >
-                                {labUploading ? "Загружаю..." : "Загрузить"}
+                                Открыть анкету
                             </button>
-
+                        ) : (
                             <button
                                 type="button"
-                                onClick={resetLabForm}
-                                disabled={labUploading}
-                                className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                                onClick={() => setShowIntake(false)}
+                                className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
                             >
-                                Сбросить
+                                Свернуть
                             </button>
-
-                            {labFile ? (
-                                <span className="text-[11px] text-zinc-500">
-                                    {labFile.name}
-                                </span>
-                            ) : null}
-                        </div>
-
-                        <div className="mt-2 text-[11px] text-zinc-500">
-                            Если bucket <b>lab_reports</b> приватный — открываем файлы через <b>signed URL</b>.
-                        </div>
+                        )}
                     </div>
                 </div>
 
-                {labReports.length === 0 ? (
-                    <p className="text-xs text-zinc-500">Пока нет загруженных анализов.</p>
+                {!showIntake ? (
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Анкета скрыта, чтобы не занимать место. Нажми “Открыть анкету”, чтобы заполнить.
+                    </p>
                 ) : (
-                    <div className="space-y-2">
-                        {labReports.map((r) => (
-                            <div
-                                key={r.id}
-                                className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3 text-xs dark:border-zinc-700 dark:bg-zinc-900"
-                            >
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                        <div className="font-medium">{r.title ?? "Анализ"}</div>
-                                        <div className="mt-1 text-[11px] text-zinc-500">
-                                            дата: {formatDate(r.taken_at)} · загружено: {formatDate(r.created_at)}
-                                        </div>
-                                        {r.ai_summary ? (
-                                            <div className="mt-2 rounded-lg bg-white p-2 text-[11px] text-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-                                                {r.ai_summary}
-                                            </div>
-                                        ) : null}
-                                    </div>
-
-                                    <div className="flex flex-col items-end gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => openLabFile(r)}
-                                            className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-[11px] text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                                        >
-                                            Открыть файл
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => deleteLabReport(r)}
-                                            className="rounded-full border border-red-200 bg-white px-3 py-1.5 text-[11px] text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:bg-zinc-950 dark:text-red-300 dark:hover:bg-red-950/30"
-                                        >
-                                            Удалить
-                                        </button>
-                                    </div>
-                                </div>
+                    <div className="space-y-3">
+                        <Section title="Контактные данные" defaultOpen>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <label className="flex flex-col gap-1 text-sm">
+                                    ФИО
+                                    <input
+                                        value={getStr("full_name")}
+                                        onChange={(e) => setStr("full_name", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Дата рождения (полностью)
+                                    <input
+                                        type="date"
+                                        value={getStr("birth_date")}
+                                        onChange={(e) => setStr("birth_date", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Место жительства (город)
+                                    <input
+                                        value={getStr("city")}
+                                        onChange={(e) => setStr("city", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Адрес электронной почты
+                                    <input
+                                        type="email"
+                                        value={getStr("email")}
+                                        onChange={(e) => setStr("email", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Ссылка на аккаунт в соц.сетях
+                                    <input
+                                        value={getStr("social_link")}
+                                        onChange={(e) => setStr("social_link", e.target.value)}
+                                        placeholder="https://..."
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Номер телефона
+                                    <input
+                                        value={getStr("phone")}
+                                        onChange={(e) => setStr("phone", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
                             </div>
-                        ))}
+                        </Section>
+
+                        <Section title="Образование и работа">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Уровень образования
+                                    <select
+                                        value={getStr("education_level")}
+                                        onChange={(e) => setStr("education_level", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    >
+                                        <option value="">—</option>
+                                        <option value="secondary_special">Средне-специальное</option>
+                                        <option value="bachelor">Высшее бакалавриат</option>
+                                        <option value="master">Высшее магистратура</option>
+                                        <option value="phd">Ученая степень</option>
+                                        <option value="other">Другое</option>
+                                    </select>
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Другое (если выбрано)
+                                    <input
+                                        value={getStr("education_other")}
+                                        onChange={(e) => setStr("education_other", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+                                    Работаете на данный момент? Если да, то где?
+                                    <textarea
+                                        rows={2}
+                                        value={getStr("current_work")}
+                                        onChange={(e) => setStr("current_work", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+                                    Воздействие вредных производств? Если да, то когда и какой вред?
+                                    <textarea
+                                        rows={2}
+                                        value={getStr("harmful_exposure")}
+                                        onChange={(e) => setStr("harmful_exposure", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                            </div>
+                        </Section>
+
+                        <Section title="Цели и ожидания">
+                            <div className="grid gap-3">
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Постановка целей
+                                    <textarea
+                                        rows={2}
+                                        value={getStr("goal_setting")}
+                                        onChange={(e) => setStr("goal_setting", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Цели и ожидания от предстоящей работы со специалистом по питанию
+                                    <textarea
+                                        rows={3}
+                                        value={getStr("expectations")}
+                                        onChange={(e) => setStr("expectations", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Желаемый итоговый результат
+                                    <textarea
+                                        rows={2}
+                                        value={getStr("desired_result")}
+                                        onChange={(e) => setStr("desired_result", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                            </div>
+                        </Section>
+
+                        <Section title="Питание: 24 часа, диеты, предпочтения">
+                            <div className="grid gap-3">
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Подробное описание питания за последние 24 часа
+                                    <span className="text-xs text-zinc-500">Время → блюдо → объём/количество</span>
+                                    <textarea
+                                        rows={4}
+                                        value={getStr("food_24h")}
+                                        onChange={(e) => setStr("food_24h", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Соблюдение диет и принципов правильного питания (когда/как долго/виды/трудности/итог)
+                                    <textarea
+                                        rows={3}
+                                        value={getStr("diet_history")}
+                                        onChange={(e) => setStr("diet_history", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Предпочтения в еде (какие продукты и как часто)
+                                    <textarea
+                                        rows={2}
+                                        value={getStr("food_preferences")}
+                                        onChange={(e) => setStr("food_preferences", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                            </div>
+                        </Section>
+
+                        <Section title="Частота продуктов (выбор)">
+                            <div className="overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+                                <table className="min-w-full border-collapse text-xs">
+                                    <thead className="bg-zinc-50 dark:bg-zinc-900">
+                                        <tr>
+                                            <th className="px-2 py-2 text-left font-medium">Продукт</th>
+                                            <th className="px-2 py-2 text-left font-medium">Как часто</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {FOOD_FREQ_ITEMS.map((item) => (
+                                            <tr key={item} className="border-t border-zinc-100 dark:border-zinc-800">
+                                                <td className="px-2 py-2">{item}</td>
+                                                <td className="px-2 py-2">
+                                                    <select
+                                                        value={String(getMap("food_freq")[item] ?? "")}
+                                                        onChange={(e) => setMapValue("food_freq", item, e.target.value as Freq5)}
+                                                        className="w-full rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                                    >
+                                                        <option value="">—</option>
+                                                        {FREQ5.map((o) => (
+                                                            <option key={o} value={o}>
+                                                                {o}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Section>
+
+                        <Section title="Частота напитков (выбор)">
+                            <div className="overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+                                <table className="min-w-full border-collapse text-xs">
+                                    <thead className="bg-zinc-50 dark:bg-zinc-900">
+                                        <tr>
+                                            <th className="px-2 py-2 text-left font-medium">Напиток</th>
+                                            <th className="px-2 py-2 text-left font-medium">Как часто</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {DRINK_FREQ_ITEMS.map((item) => (
+                                            <tr key={item} className="border-t border-zinc-100 dark:border-zinc-800">
+                                                <td className="px-2 py-2">{item}</td>
+                                                <td className="px-2 py-2">
+                                                    <select
+                                                        value={String(getMap("drink_freq")[item] ?? "")}
+                                                        onChange={(e) => setMapValue("drink_freq", item, e.target.value as Freq5)}
+                                                        className="w-full rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                                    >
+                                                        <option value="">—</option>
+                                                        {FREQ5.map((o) => (
+                                                            <option key={o} value={o}>
+                                                                {o}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Употребляете кофе? Если да, то какой и как часто?
+                                    <textarea
+                                        rows={2}
+                                        value={getStr("coffee")}
+                                        onChange={(e) => setStr("coffee", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Употребляете чай? Если да, то какой и как часто?
+                                    <textarea
+                                        rows={2}
+                                        value={getStr("tea")}
+                                        onChange={(e) => setStr("tea", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Сколько литров воды в день вы выпиваете?
+                                    <input
+                                        value={getStr("water_per_day")}
+                                        onChange={(e) => setStr("water_per_day", e.target.value)}
+                                        placeholder="Напр. 2"
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+                                    Опишите режим питья в течение дня
+                                    <textarea
+                                        rows={2}
+                                        value={getStr("drinking_regimen")}
+                                        onChange={(e) => setStr("drinking_regimen", e.target.value)}
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+
+                                <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+                                    У родственников были хронические заболевания? Если да, то у кого и какие?
+                                    <textarea
+                                        rows={2}
+                                        value={getStr("family_chronic")}
+                                        onChange={(e) => setStr("family_chronic", e.target.value)}
+                                        placeholder="Мама / папа / бабушки / дедушки / братья и сестры"
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                            </div>
+                        </Section>
+
+                        <Section title="Сон, режим дня">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Время подъема
+                                    <input value={getStr("wake_time")} onChange={(e) => setStr("wake_time", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Время отхода ко сну
+                                    <input value={getStr("bed_time")} onChange={(e) => setStr("bed_time", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+                                    Ваши действия сразу после пробуждения
+                                    <textarea rows={2} value={getStr("after_wake_actions")} onChange={(e) => setStr("after_wake_actions", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Время последнего приема пищи
+                                    <input value={getStr("last_meal_time")} onChange={(e) => setStr("last_meal_time", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Примерное время самого тяжелого периода дня
+                                    <input value={getStr("hardest_period_time")} onChange={(e) => setStr("hardest_period_time", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+                                    Где проходит сон / кто рядом / темнота / частота просыпаний / температура / влажность / самочувствие утром
+                                    <textarea
+                                        rows={3}
+                                        value={getStr("sleep_details")}
+                                        onChange={(e) => setStr("sleep_details", e.target.value)}
+                                        placeholder="Кратко опиши условия сна одним текстом"
+                                        className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+                            </div>
+                        </Section>
+
+                        <Section title="Активность, привычки">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Занятие спортом (вид/место/кол-во тренировок в неделю)
+                                    <textarea rows={2} value={getStr("sport")} onChange={(e) => setStr("sport", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Количество шагов в день
+                                    <input value={getStr("steps")} onChange={(e) => setStr("steps", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Ежедневная зарядка/растяжка?
+                                    <textarea rows={2} value={getStr("stretching")} onChange={(e) => setStr("stretching", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Сигареты (или альтернатива) в день
+                                    <input value={getStr("cigarettes_per_day")} onChange={(e) => setStr("cigarettes_per_day", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+                                    Алкоголь за месяц (вид/кол-во/частота)
+                                    <textarea rows={2} value={getStr("alcohol_month")} onChange={(e) => setStr("alcohol_month", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                            </div>
+                        </Section>
+
+                        <Section title="Жалобы, боль, настроение">
+                            <div className="grid gap-3">
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Жалобы на состояние здоровья (что беспокоит, когда началось, лечение, эффект)
+                                    <textarea rows={4} value={getStr("health_complaints")} onChange={(e) => setStr("health_complaints", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Наличие болевых ощущений (где/характер/причины/длительность/интенсивность/препараты)
+                                    <textarea rows={3} value={getStr("pain")} onChange={(e) => setStr("pain", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Головокружения (частота/продолжительность/интенсивность)
+                                    <textarea rows={2} value={getStr("dizziness")} onChange={(e) => setStr("dizziness", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                            </div>
+
+                            <div className="mt-2 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+                                <table className="min-w-full border-collapse text-xs">
+                                    <thead className="bg-zinc-50 dark:bg-zinc-900">
+                                        <tr>
+                                            <th className="px-2 py-2 text-left font-medium">Состояние</th>
+                                            <th className="px-2 py-2 text-left font-medium">Как часто</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {MOOD_ITEMS.map((item) => (
+                                            <tr key={item} className="border-t border-zinc-100 dark:border-zinc-800">
+                                                <td className="px-2 py-2">{item}</td>
+                                                <td className="px-2 py-2">
+                                                    <select
+                                                        value={String(getMap("mood_freq")[item] ?? "")}
+                                                        onChange={(e) => setMapValue("mood_freq", item, e.target.value as MoodFreq4)}
+                                                        className="w-full rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                                    >
+                                                        <option value="">—</option>
+                                                        {MOOD_FREQ4.map((o) => (
+                                                            <option key={o} value={o}>
+                                                                {o}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Section>
+
+                        <Section title="Антропометрия (поля)">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                {[
+                                    ["height", "Рост"],
+                                    ["weight", "Вес"],
+                                    ["arm_circ", "Окружность руки (верхняя часть)"],
+                                    ["chest_circ", "Окружность груди"],
+                                    ["waist_circ", "Окружность талии"],
+                                    ["belly_circ", "Окружность живота (пупок)"],
+                                    ["hips_circ", "Окружность бедер"],
+                                    ["leg_circ", "Окружность ноги (верхняя часть)"],
+                                    ["fat_percent", "Содержание жира (%)"],
+                                    ["fat_kg", "Вес жира (кг)"],
+                                    ["lean_mass", "Тощая масса тела"],
+                                    ["fat_mass_index", "Индекс массы жира"],
+                                    ["bmi", "ИМТ"],
+                                    ["bmr", "Величина основного обмена"],
+                                    ["fat_balance", "Избыток/недостаток жировой массы"],
+                                    ["muscle_balance", "Избыток/недостаток мышечной массы"],
+                                    ["fluid_balance", "Внеклеточная/внутриклеточная жидкость"],
+                                ].map(([k, label]) => (
+                                    <label key={k} className="flex flex-col gap-1 text-sm">
+                                        {label}
+                                        <input
+                                            value={getStr(String(k))}
+                                            onChange={(e) => setStr(String(k), e.target.value)}
+                                            className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                        />
+                                    </label>
+                                ))}
+                            </div>
+                        </Section>
+
+                        <Section title="Системы организма (кратко)">
+                            <div className="grid gap-3">
+                                {[
+                                    ["msk", "Опорно-двигательная система"],
+                                    ["skin", "Покровная система (кожа)"],
+                                    ["hair", "Состояние волос"],
+                                    ["mucous", "Состояние слизистых"],
+                                    ["nails", "Состояние ногтей"],
+                                    ["cardio", "Сердечно-сосудистая система"],
+                                    ["resp", "Дыхательная система"],
+                                    ["digest", "Пищеварительная система"],
+                                    ["urinary", "Мочевыделительная система"],
+                                    ["immune", "Иммунная система"],
+                                    ["repro", "Репродуктивная система"],
+                                    ["endo", "Эндокринная система"],
+                                ].map(([k, label]) => (
+                                    <label key={k} className="flex flex-col gap-1 text-sm">
+                                        {label}
+                                        <textarea
+                                            rows={2}
+                                            value={getStr(String(k))}
+                                            onChange={(e) => setStr(String(k), e.target.value)}
+                                            className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                        />
+                                    </label>
+                                ))}
+                            </div>
+                        </Section>
+
+                        <Section title="Менструальный цикл / препараты / БАДы">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Возраст начала менструаций
+                                    <input value={getStr("menarche_age")} onChange={(e) => setStr("menarche_age", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Длительность цикла (5/28)
+                                    <input value={getStr("cycle_length")} onChange={(e) => setStr("cycle_length", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Регулярность цикла
+                                    <input value={getStr("cycle_regular")} onChange={(e) => setStr("cycle_regular", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm">
+                                    Обильность / болезненность
+                                    <input value={getStr("cycle_flow_pain")} onChange={(e) => setStr("cycle_flow_pain", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+                                    Роды (если были): срок, как проходили, осложнения
+                                    <textarea rows={2} value={getStr("childbirth")} onChange={(e) => setStr("childbirth", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+                                    Принимаемые препараты и БАДы (вид/название/показания/дозировка/длительность)
+                                    <textarea rows={3} value={getStr("supplements")} onChange={(e) => setStr("supplements", e.target.value)} className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200" />
+                                </label>
+                            </div>
+                        </Section>
+
+                        <Section title="Колесо баланса (0–10)">
+                            <p className="text-xs text-zinc-500">0–3 — минимум, 4–7 — средне, 8–10 — максимум.</p>
+                            <div className="overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+                                <table className="min-w-full border-collapse text-xs">
+                                    <thead className="bg-zinc-50 dark:bg-zinc-900">
+                                        <tr>
+                                            <th className="px-2 py-2 text-left font-medium">Сфера</th>
+                                            <th className="px-2 py-2 text-left font-medium">Оценка</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {LIFE_SPHERES.map((s) => (
+                                            <tr key={s} className="border-t border-zinc-100 dark:border-zinc-800">
+                                                <td className="px-2 py-2">{s}</td>
+                                                <td className="px-2 py-2">
+                                                    <select
+                                                        value={String(getMap("life_balance")[s] ?? "")}
+                                                        onChange={(e) => setMapValue("life_balance", s, e.target.value)}
+                                                        className="w-full rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                                                    >
+                                                        <option value="">—</option>
+                                                        {Array.from({ length: 11 }).map((_, i) => (
+                                                            <option key={i} value={i}>
+                                                                {i}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Section>
+
+                        {intakeHint ? <p className="text-xs text-emerald-600">{intakeHint}</p> : null}
+
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={handleSaveIntake}
+                                disabled={savingIntake}
+                                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                            >
+                                {savingIntake ? "Сохраняю..." : "Сохранить анкету"}
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const ok = confirm("Очистить анкету? Данные будут удалены после сохранения.");
+                                    if (!ok) return;
+                                    setIntake({});
+                                    setIntakeHint(null);
+                                }}
+                                className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                            >
+                                Очистить
+                            </button>
+                        </div>
                     </div>
                 )}
             </section>
+
+            {/* ✅ Анализы (перенесено сюда) */}
+            <details className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+                <summary className="cursor-pointer select-none text-sm font-semibold">Анализы (файлы)</summary>
+
+                <div className="mt-3 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                                Загрузи PDF или фото. Специалист увидит это в твоей карточке.
+                            </p>
+                        </div>
+
+                        {userId ? (
+                            <button
+                                type="button"
+                                onClick={() => reloadLabReports(userId)}
+                                className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                            >
+                                Обновить
+                            </button>
+                        ) : null}
+                    </div>
+
+                    {labHint ? (
+                        <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                            {labHint}
+                        </div>
+                    ) : null}
+
+                    <div className="grid gap-3 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900 sm:grid-cols-3">
+                        <label className="flex flex-col gap-1 text-xs">
+                            Название
+                            <input
+                                value={labTitle}
+                                onChange={(e) => setLabTitle(e.target.value)}
+                                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+                                placeholder="ОАК / Биохимия / Витамин D..."
+                            />
+                        </label>
+
+                        <label className="flex flex-col gap-1 text-xs">
+                            Дата сдачи
+                            <input
+                                type="date"
+                                value={labTakenAt}
+                                onChange={(e) => setLabTakenAt(e.target.value)}
+                                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+                            />
+                        </label>
+
+                        <div className="flex flex-col gap-1 text-xs">
+                            Файл (PDF/JPG/PNG)
+                            <input
+                                type="file"
+                                accept=".pdf,image/*"
+                                onChange={handlePickLabFile}
+                                disabled={labUploading}
+                                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-950"
+                            />
+
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={handleUploadLab}
+                                    disabled={labUploading || !labFile}
+                                    className="rounded-full bg-black px-4 py-2 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                                >
+                                    {labUploading ? "Загружаю..." : "Загрузить"}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={resetLabForm}
+                                    disabled={labUploading}
+                                    className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                                >
+                                    Сбросить
+                                </button>
+
+                                {labFile ? <span className="text-[11px] text-zinc-500">{labFile.name}</span> : null}
+                            </div>
+
+                            <div className="mt-2 text-[11px] text-zinc-500">
+                                Если bucket <b>lab_reports</b> приватный — открываем файлы через <b>signed URL</b>.
+                            </div>
+                        </div>
+                    </div>
+
+                    {labReports.length === 0 ? (
+                        <p className="text-xs text-zinc-500">Пока нет загруженных анализов.</p>
+                    ) : (
+                        <div className="space-y-2">
+                            {labReports.map((r) => (
+                                <div
+                                    key={r.id}
+                                    className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                                >
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <div className="font-medium">{r.title ?? "Анализ"}</div>
+                                            <div className="mt-1 text-[11px] text-zinc-500">
+                                                дата: {formatDate(r.taken_at)} · загружено: {formatDate(r.created_at)}
+                                            </div>
+                                            {r.ai_summary ? (
+                                                <div className="mt-2 rounded-lg bg-white p-2 text-[11px] text-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+                                                    {r.ai_summary}
+                                                </div>
+                                            ) : null}
+                                        </div>
+
+                                        <div className="flex flex-col items-end gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => openLabFile(r)}
+                                                className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-[11px] text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                                            >
+                                                Открыть файл
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => deleteLabReport(r)}
+                                                className="rounded-full border border-red-200 bg-white px-3 py-1.5 text-[11px] text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:bg-zinc-950 dark:text-red-300 dark:hover:bg-red-950/30"
+                                            >
+                                                Удалить
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </details>
 
             {/* Мой нутрициолог */}
             <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
