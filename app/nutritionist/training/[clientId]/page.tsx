@@ -117,7 +117,14 @@ function planToDefaultReport(plan: TrainingPlan): TrainingReport {
 }
 
 function normalizeReport(x: unknown, plan: TrainingPlan | null): TrainingReport {
-  const fallback = plan ? planToDefaultReport(plan) : { status: "partial", did_as_planned: true, general_comment: "", exercises: [] };
+  const fallback: TrainingReport = plan
+    ? planToDefaultReport(plan)
+    : {
+        status: "partial",
+        did_as_planned: true,
+        general_comment: "",
+        exercises: [] as TrainingExerciseReport[],
+    };
   if (!x || typeof x !== "object") return fallback;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const o: any = x;

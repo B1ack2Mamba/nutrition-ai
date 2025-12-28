@@ -506,7 +506,6 @@ export default function ClientDetailPage() {
     const [foodSavedMsg, setFoodSavedMsg] = useState<string | null>(null);
 
     // Анкета клиента
-    const [intakeCopied, setIntakeCopied] = useState(false);
 
     useEffect(() => {
         let alive = true;
@@ -1305,35 +1304,6 @@ export default function ClientDetailPage() {
                             </div>
                         </details>
 
-                        {/* JSON (для копирования/поддержки) */}
-                        <details className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
-                            <summary className="cursor-pointer select-none text-xs font-medium text-zinc-700 dark:text-zinc-200">
-                                Показать JSON
-                            </summary>
-                            <div className="mt-3 flex items-center justify-between gap-2">
-                                <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Удобно для поддержки/экспорта.</div>
-                                <button
-                                    type="button"
-                                    onClick={async (e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        try {
-                                            await navigator.clipboard.writeText(JSON.stringify(intake, null, 2));
-                                            setIntakeCopied(true);
-                                            window.setTimeout(() => setIntakeCopied(false), 1500);
-                                        } catch {
-                                            // ignore
-                                        }
-                                    }}
-                                    className="rounded-full border border-zinc-300 bg-white px-3 py-1 text-[11px] text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                                >
-                                    {intakeCopied ? "Скопировано" : "Копировать"}
-                                </button>
-                            </div>
-                            <pre className="mt-2 max-h-[420px] overflow-auto rounded-lg bg-white p-3 text-[11px] leading-relaxed text-zinc-800 whitespace-pre-wrap break-words dark:bg-zinc-950 dark:text-zinc-100">
-                                {JSON.stringify(intake, null, 2)}
-                            </pre>
-                        </details>
                     </div>
                 ) : (
                     <div className="text-xs text-zinc-500 dark:text-zinc-400">Анкета ещё не заполнена.</div>
