@@ -82,7 +82,7 @@ export default function NutritionistLayout({
 
     return (
         <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
-            <div className="mx-auto flex min-h-screen max-w-6xl gap-6 px-4 py-8 sm:px-8">
+            <div className="mx-auto flex min-h-screen max-w-6xl min-w-0 gap-6 px-4 py-8 sm:px-8">
                 <aside className="w-64 shrink-0 space-y-4 border-r border-zinc-200 pr-4 dark:border-zinc-800">
                     <div>
                         <h1 className="text-xl font-semibold tracking-tight">
@@ -111,7 +111,12 @@ export default function NutritionistLayout({
                         />
                        
                      
-                    </nav>
+                    
+                        <NavItem
+                            href="/nutritionist/training"
+                            label="Тренировки"
+                        />
+</nav>
 
                     <p className="mt-4 text-[11px] text-zinc-500 dark:text-zinc-500">
                         Клиентский режим доступен в разделе{" "}
@@ -130,7 +135,7 @@ export default function NutritionistLayout({
                     </button>
                 </aside>
 
-                <main className="flex-1 pb-10">{children}</main>
+                <main className="flex-1 min-w-0 pb-10">{children}</main>
             </div>
         </div>
     );

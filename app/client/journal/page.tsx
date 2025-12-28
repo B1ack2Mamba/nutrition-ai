@@ -347,7 +347,7 @@ export default function ClientJournalPage() {
     <div className="space-y-6">
       <header>
         <h2 className="text-2xl font-semibold tracking-tight">Дневник питания и самочувствия</h2>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="break-words text-sm text-zinc-600 dark:text-zinc-400">
           Одна запись на один день. Формат строк дневника — как в твоём PPTX: время → блюда → количество → причина → ощущения → БАДы/лекарства.
         </p>
       </header>
@@ -356,7 +356,7 @@ export default function ClientJournalPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="grid gap-4 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+        className="grid min-w-0 gap-4 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <label className="flex flex-col gap-1">
@@ -389,7 +389,7 @@ export default function ClientJournalPage() {
           </div>
         </div>
 
-        <details open className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+        <details open className="min-w-0 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
           <summary className="cursor-pointer select-none text-sm font-semibold">Самочувствие</summary>
           <div className="mt-3 grid gap-3 sm:grid-cols-4">
             <label className="flex flex-col gap-1">
@@ -436,7 +436,7 @@ export default function ClientJournalPage() {
           </div>
         </details>
 
-        <details open className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+        <details open className="min-w-0 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
           <summary className="cursor-pointer select-none text-sm font-semibold">Сон и вода</summary>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <label className="flex flex-col gap-1">
@@ -483,15 +483,15 @@ export default function ClientJournalPage() {
           </div>
         </details>
 
-        <details open className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+        <details open className="min-w-0 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
           <summary className="cursor-pointer select-none text-sm font-semibold">Дневник питания (таблица строк)</summary>
 
           <p className="mt-2 text-xs text-zinc-500">
             Заполняй так, чтобы по одной строке можно было понять: когда, что, сколько, почему, что почувствовал(а), и какие БАДы/лекарства были.
           </p>
 
-          <div className="mt-3 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
-            <table className="min-w-full border-collapse text-xs">
+          <div className="mt-3 w-full max-w-full overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+            <table className="w-full min-w-[980px] border-collapse text-xs">
               <thead className="bg-zinc-50 dark:bg-zinc-900">
                 <tr>
                   <th className="px-2 py-2 text-left font-medium">Время</th>

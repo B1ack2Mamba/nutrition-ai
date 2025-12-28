@@ -52,6 +52,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
         { href: "/client", label: "Мой рацион" },
         { href: "/client/profile", label: "Профиль и цели" },
         { href: "/client/journal", label: "Дневник питания" },
+        { href: "/client/training", label: "Тренировки" },
     ];
 
 
@@ -62,7 +63,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
-      <main className="mx-auto flex min-h-screen max-w-5xl gap-8 px-4 py-8">
+      <main className="mx-auto flex min-h-screen max-w-5xl min-w-0 gap-8 px-4 py-8">
         {/* Sidebar */}
         <aside className="w-64 border-r border-zinc-200 pr-6 dark:border-zinc-800">
           <h1 className="text-2xl font-semibold tracking-tight">Мой кабинет</h1>
@@ -101,7 +102,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
         </aside>
 
         {/* Основной контент */}
-        <section className="flex-1">{children}</section>
+        <section className="flex-1 min-w-0">{children}</section>
       </main>
     </div>
   );

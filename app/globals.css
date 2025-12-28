@@ -23,4 +23,13 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  /* Prevent long text/URLs from breaking layout.
+     Horizontal scrolling should happen inside explicit overflow-x-auto wrappers,
+     so we do NOT globally hide overflow-x (that would clip content). */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+html {
+  /* Keep default overflow behavior */
 }

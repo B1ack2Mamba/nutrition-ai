@@ -45,6 +45,8 @@ type JournalEntry = {
     mood: number | null;
     notes: string | null;
     food_diary?: any | null;
+    training_plan?: any | null;
+    training_report?: any | null;
 };
 
 type LabReport = {
@@ -58,6 +60,118 @@ type LabReport = {
     ai_summary: string | null;
     created_at: string;
 };
+
+/* =================== Анкета клиента: отображение =================== */
+
+const INTAKE_LABELS: Record<string, string> = {
+    full_name: "ФИО",
+    birth_date: "Дата рождения",
+    city: "Город",
+    email: "Email",
+    social_link: "Соцсети",
+    phone: "Телефон",
+    education_level: "Уровень образования",
+    education_other: "Образование (другое)",
+    current_work: "Работа сейчас",
+    harmful_exposure: "Вредные производства",
+    goal_setting: "Постановка целей",
+    expectations: "Ожидания от работы",
+    desired_result: "Желаемый результат",
+    food_24h: "Питание за 24 часа",
+    diet_history: "История диет",
+    food_preferences: "Предпочтения в еде",
+    water_liters: "Вода (л/день)",
+    drinking_mode: "Режим питья",
+    coffee: "Кофе",
+    tea: "Чай",
+    sport: "Спорт",
+    steps_per_day: "Шаги в день",
+};
+
+const EDUCATION_LABELS: Record<string, string> = {
+    secondary_special: "Средне-специальное",
+    bachelor: "Высшее бакалавриат",
+    master: "Высшее магистратура",
+    phd: "Ученая степень",
+    other: "Другое",
+};
+
+function humanizeKey(key: string): string {
+    return INTAKE_LABELS[key] ?? key;
+}
+
+function looksLikeUrl(v: string): boolean {
+    return /^https?:\/\//i.test(v.trim());
+}
+
+function formatIntakeValue(key: string, value: any): string {
+    if (value == null) return "—";
+    if (typeof value === "boolean") return value ? "Да" : "Нет";
+    if (typeof value === "number") return Number.isFinite(value) ? String(value) : "—";
+    if (typeof value === "string") {
+        const s = value.trim();
+        if (!s) return "—";
+        // Приводим дату YYYY-MM-DD к локальному формату
+        if (key.endsWith("_date") && /^\d{4}-\d{2}-\d{2}$/.test(s)) {
+            const dt = new Date(s);
+            return Number.isNaN(dt.getTime()) ? s : dt.toLocaleDateString();
+        }
+        if (key === "education_level") return EDUCATION_LABELS[s] ?? s;
+        return s;
+    }
+    if (Array.isArray(value)) {
+        const flat = value
+            .map((x) => (x == null ? "" : typeof x === "string" || typeof x === "number" ? String(x) : JSON.stringify(x)))
+            .map((x) => x.trim())
+            .filter(Boolean);
+        return flat.length ? flat.join(", ") : "—";
+    }
+    if (typeof value === "object") {
+        try {
+            const s = JSON.stringify(value);
+            if (!s || s === "{}") return "—";
+            // не раздуваем карточку — длинные объекты будут видны в "Все ответы" / JSON
+            return s.length > 140 ? s.slice(0, 140) + "…" : s;
+        } catch {
+            return "[объект]";
+        }
+    }
+    return String(value);
+}
+
+const INTAKE_SUMMARY_KEYS: string[] = [
+    "full_name",
+    "birth_date",
+    "city",
+    "phone",
+    "email",
+    "social_link",
+    "education_level",
+    "current_work",
+    "goal_setting",
+    "expectations",
+    "desired_result",
+    "water_liters",
+];
+
+function buildIntakeSummary(intake: Record<string, any> | null): Array<{ key: string; label: string; value: string; isLink: boolean }> {
+    if (!intake) return [];
+    const out: Array<{ key: string; label: string; value: string; isLink: boolean }> = [];
+    for (const k of INTAKE_SUMMARY_KEYS) {
+        const raw = (intake as any)[k];
+        const v = formatIntakeValue(k, raw);
+        if (!v || v === "—") continue;
+        out.push({ key: k, label: humanizeKey(k), value: v, isLink: typeof raw === "string" && looksLikeUrl(raw) });
+    }
+    return out;
+}
+
+function listIntakeEntries(intake: Record<string, any> | null): Array<[string, any]> {
+    if (!intake) return [];
+    return Object.entries(intake)
+        .filter(([k]) => !!k)
+        .sort(([a], [b]) => humanizeKey(a).localeCompare(humanizeKey(b), "ru"));
+}
 
 type FoodSchemaKind = "legacy" | "products_cols" | "unknown";
 type FoodValue = string | string[] | null;
@@ -84,6 +198,155 @@ function formatDateTime(d: string | null | undefined): string {
     if (Number.isNaN(dt.getTime())) return "—";
     return dt.toLocaleString();
 }
+
+
+/* =================== Тренировки: план + отчёт =================== */
+
+type TrainingExercisePlan = {
+    id: string;
+    name: string;
+    sets: string;
+    reps: string;
+    weight: string;
+    rounds: string;
+    video_url: string;
+    notes: string;
+};
+
+type TrainingPlan = {
+    title: string;
+    warmup: string;
+    general_notes: string;
+    exercises: TrainingExercisePlan[];
+};
+
+type TrainingExerciseReport = {
+    id: string;
+    done: boolean;
+    actual_sets: string;
+    actual_reps: string;
+    actual_weight: string;
+    actual_rounds: string;
+    comment: string;
+};
+
+type TrainingReport = {
+    status: "done" | "partial" | "skipped";
+    did_as_planned: boolean;
+    general_comment: string;
+    exercises: TrainingExerciseReport[];
+};
+
+function uid(): string {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const c: any = globalThis.crypto;
+    if (c?.randomUUID) return c.randomUUID();
+    return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function blankPlan(): TrainingPlan {
+    return { title: "", warmup: "", general_notes: "", exercises: [] };
+}
+
+function normalizePlan(x: unknown): TrainingPlan {
+    if (!x || typeof x !== "object") return blankPlan();
+    const o: any = x;
+    const ex = Array.isArray(o.exercises) ? o.exercises : [];
+    return {
+        title: typeof o.title === "string" ? o.title : "",
+        warmup: typeof o.warmup === "string" ? o.warmup : "",
+        general_notes: typeof o.general_notes === "string" ? o.general_notes : (typeof o.generalNotes === "string" ? o.generalNotes : ""),
+        exercises: ex.map((e: any) => ({
+            id: typeof e?.id === "string" ? e.id : uid(),
+            name: typeof e?.name === "string" ? e.name : "",
+            sets: typeof e?.sets === "string" ? e.sets : "",
+            reps: typeof e?.reps === "string" ? e.reps : "",
+            weight: typeof e?.weight === "string" ? e.weight : "",
+            rounds: typeof e?.rounds === "string" ? e.rounds : "",
+            video_url: typeof e?.video_url === "string" ? e.video_url : (typeof e?.videoUrl === "string" ? e.videoUrl : ""),
+            notes: typeof e?.notes === "string" ? e.notes : "",
+        })).filter((e: TrainingExercisePlan) => e.name.trim() !== ""),
+    };
+}
+
+function normalizeReport(x: unknown, plan: TrainingPlan): TrainingReport | null {
+    if (!x || typeof x !== "object") return null;
+    const o: any = x;
+    const status: TrainingReport["status"] =
+        o.status === "done" || o.status === "partial" || o.status === "skipped" ? o.status : "partial";
+    const ex = Array.isArray(o.exercises) ? o.exercises : [];
+    const map = new Map<string, TrainingExerciseReport>();
+    for (const e of ex) {
+        if (!e || typeof e !== "object") continue;
+        const id = typeof (e as any).id === "string" ? (e as any).id : "";
+        if (!id) continue;
+        map.set(id, {
+            id,
+            done: Boolean((e as any).done),
+            actual_sets: typeof (e as any).actual_sets === "string" ? (e as any).actual_sets : "",
+            actual_reps: typeof (e as any).actual_reps === "string" ? (e as any).actual_reps : "",
+            actual_weight: typeof (e as any).actual_weight === "string" ? (e as any).actual_weight : "",
+            actual_rounds: typeof (e as any).actual_rounds === "string" ? (e as any).actual_rounds : "",
+            comment: typeof (e as any).comment === "string" ? (e as any).comment : "",
+        });
+    }
+
+    const ordered = (plan.exercises ?? []).map((p) => map.get(p.id) ?? ({
+        id: p.id,
+        done: false,
+        actual_sets: "",
+        actual_reps: "",
+        actual_weight: "",
+        actual_rounds: "",
+        comment: "",
+    }));
+
+    return {
+        status,
+        did_as_planned: typeof o.did_as_planned === "boolean" ? o.did_as_planned : Boolean(o.didAsPlanned ?? true),
+        general_comment: typeof o.general_comment === "string" ? o.general_comment : (typeof o.generalComment === "string" ? o.generalComment : ""),
+        exercises: ordered,
+    };
+}
+
+async function safeUpsertByUserDate(payload: any): Promise<{ ok: boolean; message?: string }> {
+    const { error: upErr } = await supabase.from("client_journal_entries").upsert(payload, {
+        onConflict: "user_id,entry_date",
+    });
+
+    if (!upErr) return { ok: true };
+
+    const msg = upErr.message || "";
+    if (msg.toLowerCase().includes("no unique or exclusion constraint")) {
+        const existing = await supabase
+            .from("client_journal_entries")
+            .select("id")
+            .eq("user_id", payload.user_id)
+            .eq("entry_date", payload.entry_date)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (existing.error) return { ok: false, message: existing.error.message };
+
+        if (existing.data?.id) {
+            const { error: updErr } = await supabase
+                .from("client_journal_entries")
+                .update(payload)
+                .eq("id", existing.data.id);
+
+            if (updErr) return { ok: false, message: updErr.message };
+            return { ok: true };
+        } else {
+            const { error: insErr } = await supabase.from("client_journal_entries").insert(payload);
+            if (insErr) return { ok: false, message: insErr.message };
+            return { ok: true };
+        }
+    }
+
+    return { ok: false, message: upErr.message };
+}
+
 
 function splitTokens(s: string | null | undefined): string[] {
     if (!s) return [];
@@ -187,6 +450,14 @@ export default function ClientDetailPage() {
     const [extended, setExtended] = useState<ExtendedProfile | null>(null);
     const [assignments, setAssignments] = useState<Assignment[]>([]);
     const [journal, setJournal] = useState<JournalEntry[]>([]);
+
+    // ===== Тренировки =====
+    const [trainingDate, setTrainingDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+    const [trainingPlan, setTrainingPlan] = useState<TrainingPlan>(blankPlan());
+    const [trainingSaving, setTrainingSaving] = useState(false);
+    const [trainingHint, setTrainingHint] = useState<string | null>(null);
+    const [trainingErr, setTrainingErr] = useState<string | null>(null);
+
     const [menus, setMenus] = useState<Menu[]>([]);
 
     const [loading, setLoading] = useState(true);
@@ -233,6 +504,9 @@ export default function ClientDetailPage() {
     const [foodNotes, setFoodNotes] = useState("");
     const [foodSaving, setFoodSaving] = useState(false);
     const [foodSavedMsg, setFoodSavedMsg] = useState<string | null>(null);
+
+    // Анкета клиента
+    const [intakeCopied, setIntakeCopied] = useState(false);
 
     useEffect(() => {
         let alive = true;
@@ -286,6 +560,18 @@ export default function ClientDetailPage() {
         setLabHint(null);
         setLabReports((data ?? []) as LabReport[]);
     }, [clientId]);
+
+    // Подгружаем тренировочный план/отчёт для выбранной даты из уже загруженного дневника
+    useEffect(() => {
+        const day = journal.find((e) => e.entry_date === trainingDate);
+        const p = normalizePlan(day?.training_plan ?? null);
+        setTrainingPlan(p.title || (p.exercises?.length ?? 0) > 0 ? p : blankPlan());
+        setTrainingErr(null);
+        setTrainingHint(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [trainingDate, journal]);
+
+
 
     const openLabReport = useCallback(async (r: LabReport) => {
         setLabHint(null);
@@ -885,6 +1171,10 @@ export default function ClientDetailPage() {
     const assignedAllowedTokens = foodValueToTokens(foodDb.allowed);
     const assignedBannedTokens = foodValueToTokens(foodDb.banned);
 
+    const intake = (extended?.intake_form ?? null) as Record<string, any> | null;
+    const intakeSummary = buildIntakeSummary(intake);
+    const intakeEntries = listIntakeEntries(intake);
+
     return (
         <div className="space-y-6">
             <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -966,15 +1256,85 @@ export default function ClientDetailPage() {
                     <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Заполняется клиентом в разделе профиля. Здесь можно быстро посмотреть ответы.</p>
                 </div>
 
-                {extended?.intake_form ? (
-                    <details className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
-                        <summary className="cursor-pointer select-none text-xs font-medium text-zinc-700 dark:text-zinc-200">
-                            Показать ответы (JSON)
-                        </summary>
-                        <pre className="mt-3 max-h-[420px] overflow-auto rounded-lg bg-white p-3 text-[11px] leading-relaxed text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
-                            {JSON.stringify(extended.intake_form, null, 2)}
-                        </pre>
-                    </details>
+                {intake ? (
+                    <div className="space-y-3">
+                        {/* Кратко */}
+                        {intakeSummary.length > 0 ? (
+                            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                {intakeSummary.map((it) => (
+                                    <div
+                                        key={it.key}
+                                        className="min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900"
+                                    >
+                                        <div className="text-[11px] text-zinc-500 dark:text-zinc-400">{it.label}</div>
+                                        {it.isLink ? (
+                                            <a
+                                                href={it.value}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="mt-1 block break-words text-sm text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
+                                            >
+                                                {it.value}
+                                            </a>
+                                        ) : (
+                                            <div className="mt-1 break-words text-sm text-zinc-900 dark:text-zinc-50">{it.value}</div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        ) : null}
+
+                        {/* Полный список */}
+                        <details className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
+                            <summary className="cursor-pointer select-none text-xs font-medium text-zinc-700 dark:text-zinc-200">
+                                Показать все ответы
+                            </summary>
+                            <div className="mt-3 max-h-[420px] overflow-auto rounded-lg bg-white p-3 dark:bg-zinc-950">
+                                <div className="divide-y divide-zinc-100 text-[12px] dark:divide-zinc-900">
+                                    {intakeEntries.map(([k, v]) => (
+                                        <div key={k} className="grid gap-1 py-2 sm:grid-cols-[220px,minmax(0,1fr)] sm:gap-3">
+                                            <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                                                {humanizeKey(k)}
+                                            </div>
+                                            <div className="min-w-0 whitespace-pre-wrap break-words text-zinc-900 dark:text-zinc-100">
+                                                {formatIntakeValue(k, v)}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </details>
+
+                        {/* JSON (для копирования/поддержки) */}
+                        <details className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
+                            <summary className="cursor-pointer select-none text-xs font-medium text-zinc-700 dark:text-zinc-200">
+                                Показать JSON
+                            </summary>
+                            <div className="mt-3 flex items-center justify-between gap-2">
+                                <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Удобно для поддержки/экспорта.</div>
+                                <button
+                                    type="button"
+                                    onClick={async (e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        try {
+                                            await navigator.clipboard.writeText(JSON.stringify(intake, null, 2));
+                                            setIntakeCopied(true);
+                                            window.setTimeout(() => setIntakeCopied(false), 1500);
+                                        } catch {
+                                            // ignore
+                                        }
+                                    }}
+                                    className="rounded-full border border-zinc-300 bg-white px-3 py-1 text-[11px] text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                                >
+                                    {intakeCopied ? "Скопировано" : "Копировать"}
+                                </button>
+                            </div>
+                            <pre className="mt-2 max-h-[420px] overflow-auto rounded-lg bg-white p-3 text-[11px] leading-relaxed text-zinc-800 whitespace-pre-wrap break-words dark:bg-zinc-950 dark:text-zinc-100">
+                                {JSON.stringify(intake, null, 2)}
+                            </pre>
+                        </details>
+                    </div>
                 ) : (
                     <div className="text-xs text-zinc-500 dark:text-zinc-400">Анкета ещё не заполнена.</div>
                 )}
@@ -997,7 +1357,8 @@ export default function ClientDetailPage() {
                     </button>
                 </div>
 
-                <div className="grid gap-3 lg:grid-cols-3">
+                <div className="grid gap-3 lg:grid-cols-2">
+                    <div className="space-y-3 min-w-0">
                     {/* Цель */}
                     <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-zinc-700 dark:bg-zinc-900">
                         <div className="text-xs text-zinc-500">Цель</div>
@@ -1069,6 +1430,9 @@ export default function ClientDetailPage() {
                         <div className="mt-3 text-[11px] text-zinc-500">История ниже (по умолчанию сокращена примерно в 2 раза).</div>
                     </div>
 
+                    </div>
+
+                    <div className="min-w-0">
                     {/* Можно/Нельзя */}
                     <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-zinc-700 dark:bg-zinc-900">
                         <div className="flex items-start justify-between gap-3">
@@ -1143,7 +1507,11 @@ export default function ClientDetailPage() {
                             {foodDb.notes ? <div className="mt-3 text-[11px] text-zinc-500">Комментарий: {foodDb.notes}</div> : null}
                         </div>
 
-                        <div className="mt-3 space-y-2">
+                        <details className="mt-3 rounded-xl border border-zinc-200 bg-white p-3 text-xs dark:border-zinc-700 dark:bg-zinc-950">
+                            <summary className="cursor-pointer select-none text-xs font-medium text-zinc-700 dark:text-zinc-200">
+                                Редактировать
+                            </summary>
+                            <div className="mt-3 space-y-2">
                             <label className="block text-xs">
                                 <div className="mb-1 text-zinc-500">Можно</div>
                                 <textarea
@@ -1179,7 +1547,9 @@ export default function ClientDetailPage() {
                             {(foodAllowed.trim() || foodBanned.trim()) && !foodHint ? (
                                 <div className="pt-2 text-[11px] text-zinc-500">Подсказка: можно вводить через запятую или с новой строки.</div>
                             ) : null}
-                        </div>
+                            </div>
+                        </details>
+                    </div>
                     </div>
                 </div>
 
@@ -1234,6 +1604,11 @@ export default function ClientDetailPage() {
                 ) : null}
 
                 {/* История назначений */}
+                <details className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-xs dark:border-zinc-800 dark:bg-zinc-900">
+                    <summary className="cursor-pointer select-none text-xs font-medium text-zinc-700 dark:text-zinc-200">
+                        История назначений ({menuAssignments.length})
+                    </summary>
+                    <div className="mt-3">
                 {menuAssignments.length === 0 ? (
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Пока нет назначенных рационов.</p>
                 ) : (
@@ -1323,6 +1698,9 @@ export default function ClientDetailPage() {
                 )}
 
                 {hiddenLegacyCount ? <div className="text-[11px] text-zinc-500">Скрыто устаревших записей (без привязки к меню): {hiddenLegacyCount}</div> : null}
+                    </div>
+                </details>
+
             </section>
 
             {/* Дневник */}
@@ -1520,6 +1898,70 @@ export default function ClientDetailPage() {
                     </div>
                 )}
             </section>
+
+
+            {/* Тренировки (информативно) */}
+            <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        <h3 className="text-sm font-semibold">Тренировки</h3>
+                        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                            Здесь — только отчёты клиента. Планы тренировок редактируются в отдельном разделе.
+                        </p>
+                    </div>
+
+                    <Link
+                        href={`/nutritionist/training/${clientId}`}
+                        className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                    >
+                        Открыть планы
+                    </Link>
+                </div>
+
+                {(() => {
+                    const items = (journal ?? [])
+                        .filter((e) => e && typeof e === "object" && (e as any).training_report)
+                        .map((e) => {
+                            const r: any = (e as any).training_report;
+                            const status = r?.status === "done" || r?.status === "partial" || r?.status === "skipped" ? r.status : "partial";
+                            const didAsPlanned = typeof r?.did_as_planned === "boolean" ? r.did_as_planned : Boolean(r?.didAsPlanned ?? true);
+                            const comment = typeof r?.general_comment === "string" ? r.general_comment : (typeof r?.generalComment === "string" ? r.generalComment : "");
+                            return { date: (e as any).entry_date, status, didAsPlanned, comment };
+                        })
+                        .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+                        .slice(0, 7);
+
+                    if (items.length === 0) {
+                        return <div className="text-xs text-zinc-500 dark:text-zinc-400">Клиент ещё не отмечал тренировки.</div>;
+                    }
+
+                    return (
+                        <div className="space-y-2">
+                            {items.map((it) => (
+                                <div key={it.date} className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div className="font-medium">{new Date(it.date).toLocaleDateString()}</div>
+                                        <div className="flex flex-wrap gap-2">
+                                            <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-[11px] dark:border-zinc-700 dark:bg-zinc-950">
+                                                Статус: <b>{it.status}</b>
+                                            </span>
+                                            <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-[11px] dark:border-zinc-700 dark:bg-zinc-950">
+                                                По плану: <b>{it.didAsPlanned ? "да" : "нет"}</b>
+                                            </span>
+                                        </div>
+                                    </div>
+                                    {it.comment ? (
+                                        <div className="mt-2 whitespace-pre-wrap text-[11px] text-zinc-600 dark:text-zinc-300">
+                                            <b>Комментарий:</b> {it.comment}
+                                        </div>
+                                    ) : null}
+                                </div>
+                            ))}
+                        </div>
+                    );
+                })()}
+            </section>
+
 
 {/* Анализы */}
             <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
