@@ -106,6 +106,35 @@ function extractLikelyJson(s: string): string {
     return t.slice(start, end + 1).trim();
 }
 
+async function repairJsonWithModel(
+    raw: string,
+    schema?: unknown,
+    opts: DeepSeekChatOptions = {},
+): Promise<string> {
+    const sys =
+        "Ты исправляешь формат ответа модели. Твоя задача — вернуть СТРОГО валидный JSON, " +
+        "без markdown и без текста вокруг. Если исходный текст обрезан или содержит мусор, " +
+        "сформируй новый JSON по смыслу, но КОРОТКО. Если какое-то поле невозможно восстановить, " +
+        "заполни его пустой строкой или пустым массивом. Не добавляй лишних полей.";
+
+    const user =
+        `Сырой ответ (может быть битый/обрезанный):\n\n${raw}\n\n` +
+        `Схема/формат (ориентир):\n${schema ? JSON.stringify(schema, null, 2) : "{}"}`;
+
+    return deepseekChat(
+        [
+            { role: "system", content: sys },
+            { role: "user", content: user },
+        ],
+        {
+            ...opts,
+            temperature: 0,
+            // repair обычно короче исходного, но даём запас
+            max_tokens: opts.max_tokens ?? 1200,
+        },
+    );
+}
+
 function schemaHint(schema?: unknown): string {
     if (!schema) {
         return "Ответь СТРОГО валидным JSON без markdown, без пояснений и без текста вокруг.";
@@ -175,9 +204,18 @@ export async function deepseekJson<T>(
     try {
         return JSON.parse(jsonText) as T;
     } catch {
-        throw new Error(
-            `Model did not return valid JSON. Got: ${jsonText.slice(0, 600)}`,
-        );
+        // Попытка автопочинки: попросим модель переписать ответ в валидный JSON
+        try {
+            const repaired = await repairJsonWithModel(content, typeof arg1 === "string" ? (arg2 as unknown) : undefined, {
+                model: opts?.model,
+                // Для ремонта не нужен огромный лимит, но и не слишком маленький
+                max_tokens: Math.min(opts?.max_tokens ?? 1200, 1600),
+            });
+            const repairedJsonText = extractLikelyJson(repaired);
+            return JSON.parse(repairedJsonText) as T;
+        } catch {
+            throw new Error(`Model did not return valid JSON. Got: ${jsonText.slice(0, 600)}`);
+        }
     }
 }
 

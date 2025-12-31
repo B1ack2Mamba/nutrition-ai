@@ -37,6 +37,11 @@ type LabReport = {
     file_path: string;
     file_url: string | null;
     ai_summary: string | null;
+
+    // --- заметки ---
+    client_note?: string | null;
+    nutritionist_note?: string | null;
+
     created_at: string;
 };
 
@@ -103,6 +108,10 @@ export default function ClientProfilePage() {
     const [labTakenAt, setLabTakenAt] = useState<string>("");
     const [labFile, setLabFile] = useState<File | null>(null);
 
+    const [labClientNoteDraftById, setLabClientNoteDraftById] = useState<Record<string, string>>({});
+    const [labClientNoteSavingId, setLabClientNoteSavingId] = useState<string | null>(null);
+    const [labClientNoteHintById, setLabClientNoteHintById] = useState<Record<string, string>>({});
+
     const reloadLabReports = useCallback(async (uid: string) => {
         const { data, error: e } = await supabase
             .from("client_lab_reports")
@@ -120,6 +129,30 @@ export default function ClientProfilePage() {
         setLabHint(null);
         setLabReports((data ?? []) as LabReport[]);
     }, []);
+
+    const saveClientLabNote = useCallback(async (r: LabReport) => {
+        if (!userId) return;
+        const note = String(labClientNoteDraftById[r.id] ?? r.client_note ?? "").trim();
+        setLabClientNoteSavingId(r.id);
+        setLabClientNoteHintById((p) => ({ ...p, [r.id]: "" }));
+
+        const { error: updErr } = await supabase
+            .from("client_lab_reports")
+            .update({ client_note: note || null })
+            .eq("id", r.id)
+            .eq("client_id", userId);
+
+        if (updErr) {
+            setLabClientNoteHintById((p) => ({ ...p, [r.id]: `Ошибка: ${updErr.message}` }));
+            setLabClientNoteSavingId(null);
+            return;
+        }
+
+        await reloadLabReports(userId);
+        setLabClientNoteHintById((p) => ({ ...p, [r.id]: "Сохранено" }));
+        setLabClientNoteSavingId(null);
+    }, [labClientNoteDraftById, reloadLabReports, userId]);
+
 
     const handlePickLabFile = (e: ChangeEvent<HTMLInputElement>) => {
         const f = e.target.files?.[0] ?? null;
@@ -1212,6 +1245,39 @@ export default function ClientProfilePage() {
                                             {r.ai_summary ? (
                                                 <div className="mt-2 rounded-lg bg-white p-2 text-[11px] text-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
                                                     {r.ai_summary}
+                                                </div>
+                                            ) : null}
+
+                                            <div className="mt-2 rounded-lg border border-zinc-200 bg-white p-2 text-[11px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+                                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                                    <div className="font-medium">Моя заметка (что не так / вопросы)</div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => saveClientLabNote(r)}
+                                                        disabled={labClientNoteSavingId === r.id}
+                                                        className="rounded-full bg-black px-3 py-1.5 text-[11px] text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-black"
+                                                    >
+                                                        {labClientNoteSavingId === r.id ? "Сохраняю…" : "Сохранить"}
+                                                    </button>
+                                                </div>
+
+                                                <textarea
+                                                    className="mt-2 w-full rounded-lg border border-zinc-200 bg-white p-2 text-xs outline-none dark:border-zinc-700 dark:bg-zinc-950"
+                                                    rows={4}
+                                                    value={labClientNoteDraftById[r.id] ?? (r.client_note ?? "")}
+                                                    onChange={(ev) => setLabClientNoteDraftById((p) => ({ ...p, [r.id]: ev.target.value }))}
+                                                    placeholder="Напиши сюда, что кажется неправильным, что не понравилось, вопросы по разбору…"
+                                                />
+
+                                                {labClientNoteHintById[r.id] ? (
+                                                    <div className="mt-2 text-[11px] text-zinc-500">{labClientNoteHintById[r.id]}</div>
+                                                ) : null}
+                                            </div>
+
+                                            {r.nutritionist_note ? (
+                                                <div className="mt-2 rounded-lg border border-zinc-200 bg-white p-2 text-[11px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+                                                    <div className="font-medium">Комментарий специалиста</div>
+                                                    <div className="mt-1 whitespace-pre-wrap">{r.nutritionist_note}</div>
                                                 </div>
                                             ) : null}
                                         </div>

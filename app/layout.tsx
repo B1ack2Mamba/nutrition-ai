@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
@@ -17,7 +17,6 @@ export const metadata: Metadata = {
   title: "Nutrition AI",
   description: "Личный кабинет клиента и специалиста по питанию.",
   manifest: "/manifest.webmanifest",
-  themeColor: "#ffffff",
   icons: {
     icon: [
       { url: "/favicon.png", type: "image/png" },
@@ -31,6 +30,11 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "NutritionAI",
   },
+};
+
+// Next.js (App Router): themeColor должен быть в viewport export
+export const viewport: Viewport = {
+  themeColor: "#ffffff",
 };
 
 export default function RootLayout({

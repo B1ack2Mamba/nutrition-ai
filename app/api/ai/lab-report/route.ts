@@ -1,5 +1,8 @@
 import { deepseekJson } from "@/lib/deepseek";
 import { Buffer } from "buffer";
+import { createRequire } from "module";
+import fs from "fs";
+import path from "path";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -86,15 +89,53 @@ export async function POST(req: Request) {
     const ab = await fileRes.arrayBuffer();
     const buf = Buffer.from(ab);
 
-    // OCR
-    const { recognize } = await import("tesseract.js");
-    const ocr = await recognize(buf, ocrLang, {
+    // OCR (tesseract.js)
+    // NOTE: `recognize()` is deprecated and sometimes fails in bundled runtimes.
+    // We create a worker explicitly and point it to known-good local paths.
+    const require = createRequire(import.meta.url);
+
+    const resolveFirstExisting = (candidates: string[]) => {
+      for (const modPath of candidates) {
+        try {
+          const p = require.resolve(modPath);
+          if (fs.existsSync(p)) return p;
+        } catch {
+          // continue
+        }
+      }
+      return undefined;
+    };
+
+    const workerPath = resolveFirstExisting([
+      // Most reliable for local installs (works in both browser and Node worker threads)
+      "tesseract.js/dist/worker.min.js",
+      "tesseract.js/dist/worker.js",
+      // Older layout (just in case)
+      "tesseract.js/src/worker-script/node/index.js",
+    ]);
+
+    const corePkgJson = require.resolve("tesseract.js-core/package.json");
+    const corePath = path.dirname(corePkgJson);
+
+    const { createWorker } = await import("tesseract.js");
+    const worker = await createWorker(ocrLang, 1, {
       logger: () => {
         /* silence */
       },
+      // Important: corePath should be a directory containing *all* core builds.
+      corePath,
+      // Important: workerPath must point to an actual file, otherwise Node tries a missing default.
+      ...(workerPath ? { workerPath } : {}),
     });
 
-    const ocrText = clip(ocr?.data?.text || "");
+    let ocrText = "";
+    try {
+      const ocr = await worker.recognize(buf);
+      ocrText = clip(ocr?.data?.text || "");
+    } finally {
+      await worker.terminate();
+    }
+
     if (!ocrText) {
       return Response.json(
         {
@@ -113,7 +154,8 @@ export async function POST(req: Request) {
       "Ты аккуратный помощник нутрициолога. Ты объясняешь понятно и безопасно. Не даёшь медицинских назначений.",
       { temperature: 0.2, max_tokens: 900 },
     );
-return Response.json({
+
+    return Response.json({
       ocrText,
       analysis,
       meta: { ocrLang, detail, contentType },

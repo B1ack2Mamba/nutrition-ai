@@ -44,6 +44,11 @@ type JournalEntry = {
     energy_level: number | null;
     mood: number | null;
     notes: string | null;
+
+    // --- новые поля для обратной связи по дневнику питания ---
+    nutritionist_diary_note?: string | null; // комментарий нутрициолога
+    client_diary_reply?: string | null; // ответ клиента
+
     food_diary?: any | null;
     training_plan?: any | null;
     training_report?: any | null;
@@ -58,6 +63,11 @@ type LabReport = {
     file_path: string;
     file_url: string | null;
     ai_summary: string | null;
+
+    // --- заметки по анализам ---
+    client_note?: string | null; // обратная связь клиента
+    nutritionist_note?: string | null; // ответ/комментарий специалиста
+
     created_at: string;
 };
 
@@ -552,6 +562,20 @@ export default function ClientDetailPage() {
 
     const [journalRange, setJournalRange] = useState<"7" | "30" | "all">("30");
 
+    // Дневник питания: ИИ-анализ + обратная связь
+    const [diaryAiByEntryId, setDiaryAiByEntryId] = useState<Record<string, any>>({});
+    const [diaryAiBusyByEntryId, setDiaryAiBusyByEntryId] = useState<Record<string, boolean>>({});
+    const [diaryAiErrByEntryId, setDiaryAiErrByEntryId] = useState<Record<string, string>>({});
+
+    const [diaryNoteDraftByEntryId, setDiaryNoteDraftByEntryId] = useState<Record<string, string>>({});
+    const [diaryNoteSavingByEntryId, setDiaryNoteSavingByEntryId] = useState<Record<string, boolean>>({});
+    const [diaryNoteHintByEntryId, setDiaryNoteHintByEntryId] = useState<Record<string, string>>({});
+
+    // Анализы: заметки
+    const [labNoteDraftById, setLabNoteDraftById] = useState<Record<string, string>>({});
+    const [labNoteSavingById, setLabNoteSavingById] = useState<Record<string, boolean>>({});
+    const [labNoteHintById, setLabNoteHintById] = useState<Record<string, string>>({});
+
     const [showAssignForm, setShowAssignForm] = useState(false);
     const [showAllAssignments, setShowAllAssignments] = useState(false);
 
@@ -665,6 +689,133 @@ export default function ClientDetailPage() {
     }, [trainingDate, journal]);
 
 
+
+
+
+    // ===================== ДНЕВНИК ПИТАНИЯ: AI анализ + заметка нутрициолога =====================
+
+    const runDiaryAi = useCallback(
+        async (entry: JournalEntry) => {
+            const entryId = entry.id;
+            const d: any = entry.food_diary ?? {};
+            const rowsRaw: any[] = Array.isArray(d?.rows) ? d.rows : [];
+
+            if (!entryId || rowsRaw.length === 0) {
+                setDiaryAiErrByEntryId((p) => ({ ...p, [entryId || "__noid__"]: "Нет строк дневника питания для анализа." }));
+                return;
+            }
+
+            const wake = d?.wake_time ?? d?.wakeTime ?? "";
+            const bed = d?.bed_time ?? d?.bedTime ?? "";
+            const waterBalance = d?.water_balance ?? d?.waterBalance ?? d?.water_liters ?? d?.waterLiters ?? "";
+            const sleepNote = d?.sleep_note ?? d?.sleepNote ?? "";
+
+            const rows = rowsRaw.slice(0, 80).map((r: any) => {
+                const dish = `${r?.slot ? `${r.slot}: ` : ""}${r?.dish ?? ""}`;
+                return {
+                    time: String(r?.time ?? ""),
+                    dish: dish,
+                    amount: String(r?.amount ?? ""),
+                    reason: String(r?.reason ?? r?.cause ?? ""),
+                    feeling: String(r?.feeling ?? r?.sensation ?? ""),
+                    supplements: String(r?.supplements ?? r?.meds ?? ""),
+                };
+            });
+
+            setDiaryAiBusyByEntryId((p) => ({ ...p, [entryId]: true }));
+            setDiaryAiErrByEntryId((p) => ({ ...p, [entryId]: "" }));
+
+            try {
+                const res = await fetch("/api/analyze-diary", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        entry_date: entry.entry_date,
+                        goal: extended?.main_goal ?? null,
+                        allergies: extended?.allergies ?? null,
+                        banned_foods: extended?.banned_foods ?? null,
+                        preferences: extended?.preferences ?? null,
+                        diary: {
+                            wake_time: wake,
+                            bed_time: bed,
+                            water_balance: waterBalance,
+                            sleep_note: sleepNote,
+                            rows,
+                        },
+                    }),
+                });
+
+                const json = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    throw new Error(String((json as any)?.error || `Ошибка AI (${res.status})`));
+                }
+
+                setDiaryAiByEntryId((p) => ({ ...p, [entryId]: json }));
+            } catch (e: any) {
+                setDiaryAiErrByEntryId((p) => ({ ...p, [entryId]: String(e?.message || e) }));
+            } finally {
+                setDiaryAiBusyByEntryId((p) => ({ ...p, [entryId]: false }));
+            }
+        },
+        [extended],
+    );
+
+    const saveDiaryNote = useCallback(
+        async (entry: JournalEntry) => {
+            const entryId = entry.id;
+            if (!entryId) return;
+
+            const note = (diaryNoteDraftByEntryId[entryId] ?? entry.nutritionist_diary_note ?? "").trim();
+
+            setDiaryNoteSavingByEntryId((p) => ({ ...p, [entryId]: true }));
+            setDiaryNoteHintByEntryId((p) => ({ ...p, [entryId]: "" }));
+
+            const { error } = await supabase
+                .from("client_journal_entries")
+                .update({ nutritionist_diary_note: note })
+                .eq("id", entryId)
+                .eq("user_id", clientId);
+
+            if (error) {
+                setDiaryNoteHintByEntryId((p) => ({ ...p, [entryId]: `Ошибка: ${error.message}` }));
+                setDiaryNoteSavingByEntryId((p) => ({ ...p, [entryId]: false }));
+                return;
+            }
+
+            setJournal((prev) => prev.map((x) => (x.id === entryId ? { ...x, nutritionist_diary_note: note } : x)));
+            setDiaryNoteHintByEntryId((p) => ({ ...p, [entryId]: "Сохранено" }));
+            setDiaryNoteSavingByEntryId((p) => ({ ...p, [entryId]: false }));
+        },
+        [clientId, diaryNoteDraftByEntryId],
+    );
+
+    const saveLabNote = useCallback(
+        async (r: LabReport) => {
+            const id = r.id;
+            if (!id) return;
+            const note = (labNoteDraftById[id] ?? r.nutritionist_note ?? "").trim();
+
+            setLabNoteSavingById((p) => ({ ...p, [id]: true }));
+            setLabNoteHintById((p) => ({ ...p, [id]: "" }));
+
+            const { error } = await supabase
+                .from("client_lab_reports")
+                .update({ nutritionist_note: note })
+                .eq("id", id)
+                .eq("client_id", clientId);
+
+            if (error) {
+                setLabNoteHintById((p) => ({ ...p, [id]: `Ошибка: ${error.message}` }));
+                setLabNoteSavingById((p) => ({ ...p, [id]: false }));
+                return;
+            }
+
+            setLabReports((prev) => prev.map((x) => (x.id === id ? { ...x, nutritionist_note: note } : x)));
+            setLabNoteHintById((p) => ({ ...p, [id]: "Сохранено" }));
+            setLabNoteSavingById((p) => ({ ...p, [id]: false }));
+        },
+        [clientId, labNoteDraftById],
+    );
 
     const openLabReport = useCallback(async (r: LabReport) => {
         setLabHint(null);
@@ -2354,6 +2505,142 @@ export default function ClientDetailPage() {
                                                 </div>
                                             </div>
                                         ) : null}
+
+                                        {/* AI анализ дефицитов + заметки */}
+                                        <div className="mt-3 grid gap-2">
+                                            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-700 dark:bg-zinc-900">
+                                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                                    <div className="font-medium">ИИ-анализ дефицитов (по дневнику)</div>
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => runDiaryAi(e)}
+                                                            disabled={Boolean(diaryAiBusyByEntryId[e.id])}
+                                                            className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-[11px] text-zinc-700 hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                                                        >
+                                                            {diaryAiBusyByEntryId[e.id] ? "Анализирую…" : "Запустить"}
+                                                        </button>
+
+                                                        {diaryAiByEntryId[e.id]?.draft_feedback_for_client ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    setDiaryNoteDraftByEntryId((p) => ({
+                                                                        ...p,
+                                                                        [e.id]: String(diaryAiByEntryId[e.id].draft_feedback_for_client || ""),
+                                                                    }))
+                                                                }
+                                                                className="rounded-full bg-black px-3 py-1.5 text-[11px] text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                                                                title="Вставить AI-черновик в заметку нутрициолога"
+                                                            >
+                                                                Вставить в заметку
+                                                            </button>
+                                                        ) : null}
+                                                    </div>
+                                                </div>
+
+                                                {diaryAiErrByEntryId[e.id] ? (
+                                                    <div className="mt-2 text-[11px] text-red-600">{diaryAiErrByEntryId[e.id]}</div>
+                                                ) : null}
+
+                                                {diaryAiByEntryId[e.id] ? (
+                                                    <details className="mt-2 rounded-lg bg-white p-2 text-[11px] text-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+                                                        <summary className="cursor-pointer select-none font-medium">Результат</summary>
+                                                        <div className="mt-2 space-y-2 whitespace-pre-wrap">
+                                                            <div><b>Коротко:</b> {String(diaryAiByEntryId[e.id].short_summary || "")}</div>
+
+                                                            {Array.isArray(diaryAiByEntryId[e.id].imbalances) && diaryAiByEntryId[e.id].imbalances.length ? (
+                                                                <div>
+                                                                    <b>Перекосы:</b>
+                                                                    <ul className="mt-1 list-disc pl-4">
+                                                                        {diaryAiByEntryId[e.id].imbalances.slice(0, 12).map((x: any, i: number) => (
+                                                                            <li key={i}>{String(x)}</li>
+                                                                        ))}
+                                                                    </ul>
+                                                                </div>
+                                                            ) : null}
+
+                                                            {Array.isArray(diaryAiByEntryId[e.id].likely_deficits) && diaryAiByEntryId[e.id].likely_deficits.length ? (
+                                                                <div>
+                                                                    <b>Вероятные дефициты:</b>
+                                                                    <div className="mt-1 space-y-2">
+                                                                        {diaryAiByEntryId[e.id].likely_deficits.slice(0, 7).map((d: any, i: number) => (
+                                                                            <div key={i} className="rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
+                                                                                <div className="font-medium">{String(d?.nutrient || "")}{d?.confidence ? ` (${String(d.confidence)})` : ""}</div>
+                                                                                {d?.why ? <div className="mt-1">{String(d.why)}</div> : null}
+                                                                                {Array.isArray(d?.how_to_fix) && d.how_to_fix.length ? (
+                                                                                    <div className="mt-1">
+                                                                                        <span className="font-medium">Что делать:</span>
+                                                                                        <ul className="mt-1 list-disc pl-4">
+                                                                                            {d.how_to_fix.slice(0, 6).map((x: any, j: number) => (
+                                                                                                <li key={j}>{String(x)}</li>
+                                                                                            ))}
+                                                                                        </ul>
+                                                                                    </div>
+                                                                                ) : null}
+                                                                                {Array.isArray(d?.food_examples) && d.food_examples.length ? (
+                                                                                    <div className="mt-1">
+                                                                                        <span className="font-medium">Примеры продуктов:</span> {d.food_examples.slice(0, 8).map((x: any) => String(x)).join(", ")}
+                                                                                    </div>
+                                                                                ) : null}
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            ) : null}
+
+                                                            {Array.isArray(diaryAiByEntryId[e.id].questions) && diaryAiByEntryId[e.id].questions.length ? (
+                                                                <div>
+                                                                    <b>Вопросы клиенту:</b>
+                                                                    <ul className="mt-1 list-disc pl-4">
+                                                                        {diaryAiByEntryId[e.id].questions.slice(0, 10).map((x: any, i: number) => (
+                                                                            <li key={i}>{String(x)}</li>
+                                                                        ))}
+                                                                    </ul>
+                                                                </div>
+                                                            ) : null}
+
+                                                            {diaryAiByEntryId[e.id].disclaimer ? (
+                                                                <div className="text-[10px] text-zinc-500">{String(diaryAiByEntryId[e.id].disclaimer)}</div>
+                                                            ) : null}
+                                                        </div>
+                                                    </details>
+                                                ) : null}
+                                            </div>
+
+                                            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-700 dark:bg-zinc-900">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="font-medium">Заметка нутрициолога (обратная связь)</div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => saveDiaryNote(e)}
+                                                        disabled={Boolean(diaryNoteSavingByEntryId[e.id])}
+                                                        className="rounded-full bg-black px-3 py-1.5 text-[11px] text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-black"
+                                                    >
+                                                        {diaryNoteSavingByEntryId[e.id] ? "Сохраняю…" : "Сохранить"}
+                                                    </button>
+                                                </div>
+
+                                                <textarea
+                                                    className="mt-2 w-full rounded-lg border border-zinc-200 bg-white p-2 text-xs outline-none dark:border-zinc-700 dark:bg-zinc-950"
+                                                    rows={5}
+                                                    value={diaryNoteDraftByEntryId[e.id] ?? (e.nutritionist_diary_note ?? "")}
+                                                    onChange={(ev) => setDiaryNoteDraftByEntryId((p) => ({ ...p, [e.id]: ev.target.value }))}
+                                                    placeholder="Напиши обратную связь по дневнику (или нажми «Вставить в заметку» после AI-анализа)…"
+                                                />
+
+                                                {diaryNoteHintByEntryId[e.id] ? (
+                                                    <div className="mt-2 text-[11px] text-zinc-500">{diaryNoteHintByEntryId[e.id]}</div>
+                                                ) : null}
+
+                                                {e.client_diary_reply ? (
+                                                    <div className="mt-3 rounded-lg border border-zinc-200 bg-white p-2 text-[11px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+                                                        <div className="font-medium">Ответ клиента</div>
+                                                        <div className="mt-1 whitespace-pre-wrap">{e.client_diary_reply}</div>
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        </div>
                                     </details>
                                 );
                             })}
@@ -2632,6 +2919,39 @@ export default function ClientDetailPage() {
                                                 <div className="mt-2 whitespace-pre-wrap">{r.ai_summary}</div>
                                             </details>
                                         ) : null}
+
+                                        {r.client_note ? (
+                                            <details className="mt-2 rounded-lg border border-zinc-200 bg-white p-2 text-[11px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+                                                <summary className="cursor-pointer select-none font-medium">Заметка клиента (что не так / вопросы)</summary>
+                                                <div className="mt-2 whitespace-pre-wrap">{r.client_note}</div>
+                                            </details>
+                                        ) : null}
+
+                                        <div className="mt-2 rounded-lg border border-zinc-200 bg-white p-2 text-[11px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <div className="font-medium">Заметка специалиста</div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => saveLabNote(r)}
+                                                    disabled={Boolean(labNoteSavingById[r.id])}
+                                                    className="rounded-full bg-black px-3 py-1.5 text-[11px] text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-black"
+                                                >
+                                                    {labNoteSavingById[r.id] ? "Сохраняю…" : "Сохранить"}
+                                                </button>
+                                            </div>
+
+                                            <textarea
+                                                className="mt-2 w-full rounded-lg border border-zinc-200 bg-white p-2 text-xs outline-none dark:border-zinc-700 dark:bg-zinc-950"
+                                                rows={4}
+                                                value={labNoteDraftById[r.id] ?? (r.nutritionist_note ?? "")}
+                                                onChange={(ev) => setLabNoteDraftById((p) => ({ ...p, [r.id]: ev.target.value }))}
+                                                placeholder="Твоя заметка по анализу (видит клиент)…"
+                                            />
+
+                                            {labNoteHintById[r.id] ? (
+                                                <div className="mt-2 text-[11px] text-zinc-500">{labNoteHintById[r.id]}</div>
+                                            ) : null}
+                                        </div>
                                     </div>
 
                                     <div className="flex flex-col items-end gap-2">
