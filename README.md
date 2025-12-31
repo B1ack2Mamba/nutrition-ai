@@ -1,36 +1,108 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Nutrition AI
 
-## Getting Started
+Веб‑приложение (Next.js) с кабинетами клиента и специалиста по питанию.
 
-First, run the development server:
+## PWA (как приложение на телефоне)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+В проект добавлен PWA-режим:
+- `public/manifest.webmanifest`
+- `public/sw.js` (service worker)
+- `components/ServiceWorkerRegister.tsx` (авторегистрация SW)
+- страница-инструкция: `/install`
+
+### Условия
+- Нужен **HTTPS** на домене (на localhost тоже ок).
+- На iPhone установка делается через Safari → “На экран «Домой»”.
+- На Android Chrome предложит “Установить приложение”.
+
+## Android APK (без магазинов, по прямой ссылке)
+
+### Идея (рекомендуется)
+APK — это тонкая оболочка (WebView), которая открывает ваш сайт по HTTPS.
+Плюс: обновили сайт → “приложение” обновилось сразу, без переустановки APK.
+
+### Шаги
+1) Открой `capacitor.config.json` и впиши ваш домен:
+```json
+server: {
+  url: "https://YOUR_DOMAIN_HERE",
+  cleartext: false
+}
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2) Установи зависимости и добавь Android-проект:
+```bash
+npm i
+npx cap add android
+npx cap sync android
+npx cap open android
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3) В Android Studio:
+- Build → Generate Signed Bundle / APK → APK → Release
+- собранный файл `.apk` положи в `public/downloads/nutrition-ai.apk`
+- на сайте файл будет доступен по адресу:
+  `/downloads/nutrition-ai.apk`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Установка на Android
+Пользователь скачивает APK и при первом запуске разрешает “Установка из неизвестных источников” (Install unknown apps).
 
-## Learn More
+## Локальная разработка
+```bash
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+Открой: http://localhost:3000
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Уведомления (Push)
 
-## Deploy on Vercel
+Поддерживаются **Web Push** уведомления (PWA).
+На iPhone Web Push работает в iOS 16.4+ и только если сайт установлен “На экран Домой”.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 1) Применить SQL
+В Supabase SQL editor выполнить новый файл:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `sql/05_notifications.sql`
+
+### 2) Сгенерировать VAPID ключи
+В корне проекта:
+
+```bash
+node scripts/generate-vapid.mjs
+```
+
+Скопируй переменные в окружение деплоя (Vercel/Render/сервер):
+
+- `NEXT_PUBLIC_VAPID_PUBLIC_KEY`
+- `VAPID_PRIVATE_KEY`
+- `VAPID_SUBJECT` (например `mailto:you@example.com`)
+- `SUPABASE_SERVICE_ROLE_KEY` (нужен серверу, чтобы слать уведомления)
+
+> `SUPABASE_SERVICE_ROLE_KEY` **нельзя** класть в клиент, только в server env.
+
+### 3) Где включать
+- Клиент: `/client/notifications`
+- Специалист: `/nutritionist/notifications`
+
+### Как это работает
+- На странице уведомлений пользователь включает push → подписка сохраняется в `notification_devices`.
+- Когда клиент сохраняет дневник/отчёт или специалист сохраняет план, сервер:
+  1) пишет запись в `user_notifications`,
+  2) шлёт “пинг” Web Push (может быть без payload), а контент берётся из ленты.
+
+### APK (Capacitor)
+Если вы используете APK (Capacitor WebView), **Web Push может не работать** как в браузере.
+В таком случае самый надёжный путь — нативный Push через FCM (отдельная настройка).
+
+
+## БАДы (план добавок)
+
+Добавлен раздел «БАДы»:
+- в кабинете специалиста: кнопка «ИИ → подобрать» + редактирование списка + сохранение клиенту
+- в кабинете клиента: отображение назначенного списка в той же секции, где «Можно/Нельзя»
+
+### Применить SQL
+В Supabase SQL editor выполнить файл:
+
+- `sql/06_supplements.sql`

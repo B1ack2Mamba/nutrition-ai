@@ -47,6 +47,32 @@ type FoodRulesRow = {
     updated_at?: string | null;
 };
 
+type SupplementItem = {
+    name: string;
+    dose: string;
+    timing: string;
+    duration: string;
+    purpose: string;
+    cautions?: string[];
+};
+
+type SupplementPlan = {
+    rationale_short?: string;
+    items: SupplementItem[];
+    general_notes?: string;
+    disclaimer?: string;
+};
+
+type SupplementPlanRow = {
+    id: string;
+    client_id: string;
+    nutritionist_id: string | null;
+    plan?: unknown;
+    notes?: string | null;
+    created_at: string;
+    updated_at?: string | null;
+};
+
 function formatDate(d: string | null | undefined): string {
     if (!d) return "—";
     const dt = new Date(d);
@@ -60,6 +86,38 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function asRecord(v: unknown): Record<string, unknown> {
     return isRecord(v) ? v : {};
+}
+
+function normalizeSupplementPlan(raw: unknown): SupplementPlan {
+    const r = asRecord(raw);
+    const out: SupplementPlan = { items: [] };
+
+    const rationale = getString(r.rationale_short);
+    if (rationale) out.rationale_short = rationale;
+
+    const generalNotes = getString(r.general_notes);
+    if (generalNotes) out.general_notes = generalNotes;
+
+    const disclaimer = getString(r.disclaimer);
+    if (disclaimer) out.disclaimer = disclaimer;
+
+    const itemsRaw = Array.isArray(r.items) ? r.items : [];
+    const items: SupplementItem[] = [];
+    for (const it of itemsRaw) {
+        const i = asRecord(it);
+        const name = getString(i.name);
+        if (!name) continue;
+        items.push({
+            name,
+            dose: getString(i.dose) ?? "",
+            timing: getString(i.timing) ?? "",
+            duration: getString(i.duration) ?? "",
+            purpose: getString(i.purpose) ?? "",
+            cautions: Array.isArray(i.cautions) ? i.cautions.map((x) => String(x)).filter(Boolean).slice(0, 12) : [],
+        });
+    }
+    out.items = items;
+    return out;
 }
 
 function getString(v: unknown): string | null {
@@ -358,6 +416,9 @@ export default function ClientPage() {
     const [currentFood, setCurrentFood] = useState<FoodRulesRow | null>(null);
     const [foodHint, setFoodHint] = useState<string | null>(null);
 
+    const [currentSupp, setCurrentSupp] = useState<SupplementPlanRow | null>(null);
+    const [suppHint, setSuppHint] = useState<string | null>(null);
+
     const reloadFood = useCallback(async (clientId: string) => {
         // Сначала updated_at -> затем created_at (и фоллбек если колонки нет)
         const q1 = await supabase
@@ -398,6 +459,44 @@ export default function ClientPage() {
         setCurrentFood((q1.data?.[0] as FoodRulesRow | undefined) ?? null);
     }, []);
 
+    const reloadSupplements = useCallback(async (clientId: string) => {
+        const q1 = await supabase
+            .from("client_supplement_plans")
+            .select("*")
+            .eq("client_id", clientId)
+            .order("updated_at", { ascending: false })
+            .order("created_at", { ascending: false })
+            .limit(1);
+
+        if (q1.error) {
+            const msg = q1.error.message.toLowerCase();
+            if (msg.includes("updated_at") && msg.includes("does not exist")) {
+                const q2 = await supabase
+                    .from("client_supplement_plans")
+                    .select("*")
+                    .eq("client_id", clientId)
+                    .order("created_at", { ascending: false })
+                    .limit(1);
+
+                if (q2.error) {
+                    setSuppHint("БАДы недоступны (таблица client_supplement_plans или права/RLS).")
+                    setCurrentSupp(null);
+                    return;
+                }
+
+                setSuppHint(null);
+                setCurrentSupp((q2.data?.[0] as SupplementPlanRow | undefined) ?? null);
+                return;
+            }
+
+            setSuppHint("БАДы недоступны (таблица client_supplement_plans или права/RLS).");
+            setCurrentSupp(null);
+            return;
+        }
+
+        setSuppHint(null);
+        setCurrentSupp((q1.data?.[0] as SupplementPlanRow | undefined) ?? null);
+    }, []);
     useEffect(() => {
         const load = async () => {
             setLoading(true);
@@ -460,6 +559,7 @@ export default function ClientPage() {
                 setAssignments((assRows ?? []) as MenuAssignment[]);
 
                 await reloadFood(user.id);
+                await reloadSupplements(user.id);
 
                 setLoading(false);
             } catch (e) {
@@ -470,7 +570,7 @@ export default function ClientPage() {
         };
 
         load();
-    }, [reloadFood]);
+    }, [reloadFood, reloadSupplements]);
 
     const menuAssignments = useMemo(() => {
         return assignments.filter((a) => !!a.menu_id || !!a.menu_data);
@@ -501,6 +601,16 @@ export default function ClientPage() {
         if (!currentFood) return null;
         return currentFood.updated_at ?? currentFood.created_at;
     }, [currentFood]);
+
+    const supplementPlan = useMemo(() => {
+        if (!currentSupp) return { items: [] as SupplementItem[] } as SupplementPlan;
+        return normalizeSupplementPlan(currentSupp.plan);
+    }, [currentSupp]);
+
+    const supplementsUpdatedAt = useMemo(() => {
+        if (!currentSupp) return null;
+        return currentSupp.updated_at ?? currentSupp.created_at;
+    }, [currentSupp]);
 
     if (loading) return <p className="text-sm text-zinc-500">Загружаю…</p>;
     if (fatalError) return <p className="text-sm text-red-500">{fatalError}</p>;
@@ -642,7 +752,10 @@ export default function ClientPage() {
                     {basic?.id ? (
                         <button
                             type="button"
-                            onClick={() => reloadFood(basic.id)}
+                            onClick={() => {
+                                reloadFood(basic.id);
+                                reloadSupplements(basic.id);
+                            }}
                             className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100"
                         >
                             Обновить
@@ -699,6 +812,52 @@ export default function ClientPage() {
                         </div>
                     </>
                 )}
+
+                {/* БАДы (в том же разделе) */}
+                <div className="mt-4 rounded-xl bg-zinc-50 p-3">
+                    <div className="text-xs font-semibold text-zinc-700">БАДы</div>
+
+                    {suppHint ? (
+                        <p className="mt-2 text-xs text-zinc-500">{suppHint}</p>
+                    ) : !currentSupp || !supplementPlan.items?.length ? (
+                        <p className="mt-2 text-xs text-zinc-500">Пока ничего не назначено.</p>
+                    ) : (
+                        <>
+                            {supplementPlan.rationale_short ? (
+                                <div className="mt-2 text-xs text-zinc-600">
+                                    <span className="text-zinc-500">Зачем:</span> {supplementPlan.rationale_short}
+                                </div>
+                            ) : null}
+
+                            {supplementPlan.general_notes ? (
+                                <div className="mt-2 text-xs text-zinc-600">
+                                    <span className="text-zinc-500">Заметки:</span> {supplementPlan.general_notes}
+                                </div>
+                            ) : null}
+
+                            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                {supplementPlan.items.slice(0, 12).map((it, idx) => (
+                                    <div key={`supp-${idx}-${it.name}`} className="rounded-xl border border-zinc-200 bg-white p-3">
+                                        <div className="text-xs font-semibold text-zinc-700">{it.name}</div>
+                                        <div className="mt-1 text-xs text-zinc-500">
+                                            {it.dose ? <span>{it.dose}</span> : null}
+                                            {it.timing ? <span>{it.dose ? " · " : ""}{it.timing}</span> : null}
+                                            {it.duration ? <span>{(it.dose || it.timing) ? " · " : ""}{it.duration}</span> : null}
+                                        </div>
+                                        {it.purpose ? <div className="mt-2 text-xs text-zinc-600"><span className="text-zinc-500">Цель:</span> {it.purpose}</div> : null}
+                                        {it.cautions?.length ? <div className="mt-2 text-[11px] text-zinc-500">Осторожно: {it.cautions.join(", ")}</div> : null}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {supplementPlan.disclaimer ? (
+                                <div className="mt-3 text-[11px] text-zinc-500">Важно: {supplementPlan.disclaimer}</div>
+                            ) : null}
+
+                            <div className="mt-2 text-[11px] text-zinc-500">Обновлено: {formatDate(supplementsUpdatedAt)}</div>
+                        </>
+                    )}
+                </div>
             </section>
         </div>
     );

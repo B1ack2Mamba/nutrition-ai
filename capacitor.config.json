@@ -1,0 +1,10 @@
+{
+  "appId": "com.nutritionai.app",
+  "appName": "Nutrition AI",
+  "webDir": "public",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://YOUR_DOMAIN_HERE",
+    "cleartext": false
+  }
+}

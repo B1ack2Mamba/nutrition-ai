@@ -116,6 +116,10 @@ export default function NutritionistLayout({
                             href="/nutritionist/training"
                             label="Тренировки"
                         />
+                        <NavItem
+                            href="/nutritionist/notifications"
+                            label="Уведомления"
+                        />
 </nav>
 
                     <p className="mt-4 text-[11px] text-zinc-500 dark:text-zinc-500">

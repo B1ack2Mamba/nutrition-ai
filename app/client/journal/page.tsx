@@ -288,6 +288,38 @@ export default function ClientJournalPage() {
 
       await loadEntries();
       setHint(editingId ? "Запись обновлена." : "Запись добавлена.");
+
+      // Notify nutritionist (if linked) about diary update
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (token) {
+          const { data: links } = await supabase
+            .from("client_nutritionist_links")
+            .select("nutritionist_id,status")
+            .eq("client_id", user.id)
+            .order("created_at", { ascending: false })
+            .limit(1);
+
+          const link = (links?.[0] ?? null) as any;
+          if (link && (link.status === "approved" || link.status === "active")) {
+            await fetch("/api/notifications/emit", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({
+                userId: link.nutritionist_id,
+                topic: "diary",
+                title: "Дневник питания обновлён",
+                body: `Клиент обновил дневник за ${new Date(date).toLocaleDateString()}.`,
+                url: `/nutritionist/clients/${user.id}`,
+              }),
+            });
+          }
+        }
+      } catch {
+        // ignore
+      }
+
     } finally {
       setSaving(false);
     }

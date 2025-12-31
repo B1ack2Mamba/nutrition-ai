@@ -53,6 +53,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
         { href: "/client/profile", label: "Профиль и цели" },
         { href: "/client/journal", label: "Дневник питания" },
         { href: "/client/training", label: "Тренировки" },
+        { href: "/client/notifications", label: "Уведомления" },
     ];
 
 

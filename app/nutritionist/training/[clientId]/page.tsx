@@ -568,6 +568,28 @@ export default function NutritionistTrainingClientPage() {
 
                   setHint("План сохранён ✓");
 
+                  // Notify client about updated training plan
+                  try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const token = session?.access_token;
+                    if (token) {
+                      await fetch("/api/notifications/emit", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                        body: JSON.stringify({
+                          userId: clientId,
+                          topic: "training",
+                          title: "План тренировки обновлён",
+                          body: `Специалист обновил план на ${new Date(trainingDate).toLocaleDateString()}.`,
+                          url: `/client/training`,
+                        }),
+                      });
+                    }
+                  } catch {
+                    // ignore
+                  }
+
+
                   const { data: j } = await supabase
                     .from("client_journal_entries")
                     .select("id, entry_date, training_plan, training_report")

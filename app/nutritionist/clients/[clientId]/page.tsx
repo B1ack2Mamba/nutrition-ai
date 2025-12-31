@@ -185,6 +185,89 @@ type FoodDbSnapshot = {
     updatedAt: string | null;
 };
 
+/* =================== БАДы: план добавок (назначение клиенту) =================== */
+
+type SupplementItem = {
+    name: string;
+    dose: string;
+    timing: string;
+    duration: string;
+    purpose: string;
+    cautions?: string[];
+};
+
+type SupplementPlan = {
+    rationale_short?: string;
+    items: SupplementItem[];
+    general_notes?: string;
+    disclaimer?: string;
+};
+
+type SupplementDbSnapshot = {
+    id: string | null;
+    plan: SupplementPlan | null;
+    notes: string | null;
+    updatedAt: string | null;
+};
+
+function emptySupplementItem(): SupplementItem {
+    return {
+        name: "",
+        dose: "",
+        timing: "",
+        duration: "",
+        purpose: "",
+        cautions: [],
+    };
+}
+
+function normalizeSupplementPlan(raw: any): SupplementPlan {
+    const out: SupplementPlan = { items: [] };
+    if (!raw || typeof raw !== "object") return out;
+
+    if (typeof raw.rationale_short === "string") out.rationale_short = raw.rationale_short;
+    if (typeof raw.general_notes === "string") out.general_notes = raw.general_notes;
+    if (typeof raw.disclaimer === "string") out.disclaimer = raw.disclaimer;
+
+    const itemsRaw = Array.isArray(raw.items) ? raw.items : [];
+    const items: SupplementItem[] = [];
+
+    for (const it of itemsRaw) {
+        if (!it || typeof it !== "object") continue;
+        const r = it as any;
+        const name = typeof r.name === "string" ? r.name.trim() : "";
+        if (!name) continue;
+
+        items.push({
+            name,
+            dose: typeof r.dose === "string" ? r.dose : "",
+            timing: typeof r.timing === "string" ? r.timing : "",
+            duration: typeof r.duration === "string" ? r.duration : "",
+            purpose: typeof r.purpose === "string" ? r.purpose : "",
+            cautions: Array.isArray(r.cautions) ? r.cautions.map((x: any) => String(x)).filter(Boolean).slice(0, 12) : [],
+        });
+    }
+
+    out.items = items;
+    return out;
+}
+
+function pickSupplementSnapshot(row: unknown): SupplementDbSnapshot {
+    if (!isRecord(row)) return { id: null, plan: null, notes: null, updatedAt: null };
+
+    const id = typeof row.id === "string" ? row.id : null;
+    const notes = typeof row.notes === "string" ? row.notes : null;
+
+    const updatedAt =
+        (typeof row.updated_at === "string" ? row.updated_at : null) ??
+        (typeof row.created_at === "string" ? row.created_at : null);
+
+    const planRaw = (row as Record<string, unknown>).plan;
+    const plan = normalizeSupplementPlan(planRaw);
+
+    return { id, plan, notes, updatedAt };
+}
+
 function formatDate(d: string | null | undefined): string {
     if (!d) return "—";
     const dt = new Date(d);
@@ -505,6 +588,17 @@ export default function ClientDetailPage() {
     const [foodSaving, setFoodSaving] = useState(false);
     const [foodSavedMsg, setFoodSavedMsg] = useState<string | null>(null);
 
+    // БАДы (план добавок)
+    const [suppHint, setSuppHint] = useState<string | null>(null);
+    const [suppDb, setSuppDb] = useState<SupplementDbSnapshot>({ id: null, plan: null, notes: null, updatedAt: null });
+    const [suppMeta, setSuppMeta] = useState<{ rationale_short?: string; disclaimer?: string }>({});
+    const [suppItems, setSuppItems] = useState<SupplementItem[]>([]);
+    const [suppGeneralNotes, setSuppGeneralNotes] = useState<string>("");
+    const [suppSaving, setSuppSaving] = useState(false);
+    const [suppSavedMsg, setSuppSavedMsg] = useState<string | null>(null);
+    const [suppAiBusy, setSuppAiBusy] = useState(false);
+    const [suppAiHint, setSuppAiHint] = useState<string | null>(null);
+
     // Анкета клиента
 
     useEffect(() => {
@@ -797,6 +891,65 @@ export default function ClientDetailPage() {
         [clientId],
     );
 
+    const reloadSupplementPlan = useCallback(
+        async (nutritionistId: string) => {
+            // updated_at -> created_at, с фоллбеком если updated_at отсутствует
+            const q1 = await supabase
+                .from("client_supplement_plans")
+                .select("*")
+                .eq("client_id", clientId)
+                .eq("nutritionist_id", nutritionistId)
+                .order("updated_at", { ascending: false })
+                .order("created_at", { ascending: false })
+                .limit(1);
+
+            if (q1.error) {
+                const msg = q1.error.message.toLowerCase();
+                if (msg.includes("updated_at") && msg.includes("does not exist")) {
+                    const q2 = await supabase
+                        .from("client_supplement_plans")
+                        .select("*")
+                        .eq("client_id", clientId)
+                        .eq("nutritionist_id", nutritionistId)
+                        .order("created_at", { ascending: false })
+                        .limit(1);
+
+                    if (q2.error) {
+                        setSuppHint("Секция БАДов не настроена (таблица client_supplement_plans или права/RLS).");
+                        setSuppDb({ id: null, plan: null, notes: null, updatedAt: null });
+                        setSuppItems([]);
+                        setSuppGeneralNotes("");
+                        return;
+                    }
+
+                    setSuppHint(null);
+                    const row2 = (q2.data?.[0] ?? null) as unknown;
+                    const snap2 = pickSupplementSnapshot(row2);
+                    setSuppDb(snap2);
+                    setSuppMeta({ rationale_short: snap2.plan?.rationale_short, disclaimer: snap2.plan?.disclaimer });
+                    setSuppItems(snap2.plan?.items ?? []);
+                    setSuppGeneralNotes(snap2.plan?.general_notes ?? "");
+                    return;
+                }
+
+                setSuppHint("Секция БАДов не настроена (таблица client_supplement_plans или права/RLS).");
+                setSuppDb({ id: null, plan: null, notes: null, updatedAt: null });
+                setSuppItems([]);
+                setSuppGeneralNotes("");
+                return;
+            }
+
+            setSuppHint(null);
+            const row = (q1.data?.[0] ?? null) as unknown;
+            const snap = pickSupplementSnapshot(row);
+            setSuppDb(snap);
+            setSuppMeta({ rationale_short: snap.plan?.rationale_short, disclaimer: snap.plan?.disclaimer });
+            setSuppItems(snap.plan?.items ?? []);
+            setSuppGeneralNotes(snap.plan?.general_notes ?? "");
+        },
+        [clientId],
+    );
+
     useEffect(() => {
         const load = async () => {
             setLoading(true);
@@ -866,12 +1019,13 @@ export default function ClientDetailPage() {
 
             await reloadLabReports();
             await reloadFoodRules(user.id);
+            await reloadSupplementPlan(user.id);
 
             setLoading(false);
         };
 
         load();
-    }, [clientId, reloadLabReports, reloadFoodRules]);
+    }, [clientId, reloadLabReports, reloadFoodRules, reloadSupplementPlan]);
 
     const menuAssignments = useMemo(() => assignments.filter((a) => !!a.menu_id || !!a.menu_data), [assignments]);
 
@@ -1159,6 +1313,157 @@ export default function ClientDetailPage() {
             setFoodSaving(false);
         }
     };
+
+    const saveSupplementPlan = async () => {
+        setSuppSaving(true);
+        setSuppSavedMsg(null);
+        setSuppAiHint(null);
+        setSuppHint(null);
+
+        const { data, error } = await supabase.auth.getUser();
+        if (error) {
+            setSuppHint(error.message);
+            setSuppSaving(false);
+            return;
+        }
+
+        const user = data.user;
+        if (!user) {
+            setSuppHint("Нет авторизации");
+            setSuppSaving(false);
+            return;
+        }
+
+        try {
+            const nowIso = new Date().toISOString();
+
+            const cleanItems = (suppItems || [])
+                .map((it) => ({
+                    name: (it.name || "").trim(),
+                    dose: (it.dose || "").trim(),
+                    timing: (it.timing || "").trim(),
+                    duration: (it.duration || "").trim(),
+                    purpose: (it.purpose || "").trim(),
+                    cautions: Array.isArray(it.cautions) ? it.cautions.map((x) => String(x).trim()).filter(Boolean).slice(0, 12) : [],
+                }))
+                .filter((it) => !!it.name);
+
+            const plan: SupplementPlan = {
+                items: cleanItems,
+                general_notes: suppGeneralNotes.trim() || undefined,
+                rationale_short: suppMeta.rationale_short,
+                disclaimer: suppMeta.disclaimer,
+            };
+
+            const payload = {
+                client_id: clientId,
+                nutritionist_id: user.id,
+                plan,
+                notes: null,
+                updated_at: nowIso,
+            } as any;
+
+            let errMsg: string | null = null;
+            if (suppDb.id) {
+                const { error: e } = await supabase.from("client_supplement_plans").update(payload).eq("id", suppDb.id);
+                errMsg = e ? e.message : null;
+            } else {
+                const { error: e } = await supabase.from("client_supplement_plans").insert(payload);
+                errMsg = e ? e.message : null;
+            }
+
+            if (errMsg) {
+                setSuppHint(errMsg);
+                return;
+            }
+
+            await reloadSupplementPlan(user.id);
+            setSuppSavedMsg("✅ Сохранено. Клиент увидит это у себя.");
+            window.setTimeout(() => setSuppSavedMsg(null), 2500);
+        } finally {
+            setSuppSaving(false);
+        }
+    };
+
+    const generateSupplementsWithAI = useCallback(async () => {
+        setSuppAiBusy(true);
+        setSuppAiHint(null);
+        setSuppHint(null);
+
+        try {
+            // сводка по дневнику (для контекста)
+            const weights = journal.map((j) => (typeof j.weight_kg === "number" ? j.weight_kg : null)).filter((x): x is number => typeof x === "number");
+            const startWeight = weights.length ? weights[0] : null;
+            const lastWeight = weights.length ? weights[weights.length - 1] : null;
+            const deltaWeight = typeof startWeight === "number" && typeof lastWeight === "number" ? lastWeight - startWeight : null;
+
+            const energies = journal.map((j) => (typeof j.energy_level === "number" ? j.energy_level : null)).filter((x): x is number => typeof x === "number");
+            const moods = journal.map((j) => (typeof j.mood === "number" ? j.mood : null)).filter((x): x is number => typeof x === "number");
+            const avg = (arr: number[]) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+
+            const labSummaries = (labReports || [])
+                .map((r) => (typeof r.ai_summary === "string" ? r.ai_summary.trim() : ""))
+                .filter(Boolean)
+                .slice(0, 3);
+
+            const allowed = parseFoodTextareaToArray(foodAllowed);
+            const banned = parseFoodTextareaToArray(foodBanned);
+
+            const resp = await fetch("/api/ai/supplement-plan", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    client: {
+                        main_goal: extended?.main_goal ?? null,
+                        goal_description: extended?.goal_description ?? null,
+                        allergies: extended?.allergies ?? null,
+                        banned_foods: extended?.banned_foods ?? null,
+                        preferences: extended?.preferences ?? null,
+                        monthly_budget: extended?.monthly_budget ?? null,
+                    },
+                    intake_form: (extended as any)?.intake_form ?? null,
+                    lab_summaries: labSummaries,
+                    food_rules: { allowed, banned, notes: foodNotes || null },
+                    journal_summary: {
+                        startWeight,
+                        lastWeight,
+                        deltaWeight,
+                        avgEnergy: avg(energies),
+                        avgMood: avg(moods),
+                        entriesCount: journal.length,
+                    },
+                }),
+            });
+
+            const json = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                setSuppAiHint(json?.error || json?.details || "Ошибка ИИ-подбора.");
+                return;
+            }
+
+            const plan = normalizeSupplementPlan(json);
+            setSuppMeta({ rationale_short: plan.rationale_short, disclaimer: plan.disclaimer });
+            setSuppItems(plan.items || []);
+            setSuppGeneralNotes(plan.general_notes ?? "");
+            setSuppAiHint("Готово: проверь и при необходимости поправь — затем «Сохранить». ");
+        } catch (e: any) {
+            setSuppAiHint(e?.message || "Ошибка ИИ-подбора.");
+        } finally {
+            setSuppAiBusy(false);
+        }
+    }, [extended, foodAllowed, foodBanned, foodNotes, journal, labReports]);
+
+    const updateSuppItem = useCallback((idx: number, patch: Partial<SupplementItem>) => {
+        setSuppItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+    }, []);
+
+    const removeSuppItem = useCallback((idx: number) => {
+        setSuppItems((prev) => prev.filter((_, i) => i !== idx));
+    }, []);
+
+    const addSuppItem = useCallback(() => {
+        setSuppItems((prev) => [...prev, emptySupplementItem()]);
+    }, []);
 
     if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">Загружаю данные клиента...</p>;
     if (fatalError) return <p className="text-sm text-red-500">{fatalError}</p>;
@@ -1517,6 +1822,193 @@ export default function ClientDetailPage() {
                             {(foodAllowed.trim() || foodBanned.trim()) && !foodHint ? (
                                 <div className="pt-2 text-[11px] text-zinc-500">Подсказка: можно вводить через запятую или с новой строки.</div>
                             ) : null}
+                            </div>
+                        </details>
+                    </div>
+
+                    {/* БАДы */}
+                    <div className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-zinc-700 dark:bg-zinc-900">
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <div className="text-xs text-zinc-500">БАДы</div>
+                                <div className="mt-1 text-sm font-semibold">План добавок</div>
+                                {suppDb.updatedAt ? (
+                                    <div className="mt-1 text-[11px] text-zinc-500">Сейчас назначено (из БД): {formatDate(suppDb.updatedAt)}</div>
+                                ) : (
+                                    <div className="mt-1 text-[11px] text-zinc-500">Пока не назначено.</div>
+                                )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={generateSupplementsWithAI}
+                                    disabled={suppAiBusy || !!suppHint}
+                                    className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                                    title={suppHint ? "Нужно настроить таблицу client_supplement_plans и RLS" : ""}
+                                >
+                                    {suppAiBusy ? "ИИ..." : "ИИ → подобрать"}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={saveSupplementPlan}
+                                    disabled={suppSaving || !!suppHint}
+                                    className="rounded-full bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                                    title={suppHint ? "Нужно настроить таблицу client_supplement_plans и RLS" : ""}
+                                >
+                                    {suppSaving ? "Сохраняю..." : "Сохранить"}
+                                </button>
+                            </div>
+                        </div>
+
+                        {suppSavedMsg ? <div className="mt-2 text-[11px] text-green-600 dark:text-green-400">{suppSavedMsg}</div> : null}
+                        {suppAiHint ? <div className="mt-2 text-[11px] text-zinc-600 dark:text-zinc-300">{suppAiHint}</div> : null}
+
+                        {suppHint ? (
+                            <div className="mt-3 rounded-xl border border-dashed border-zinc-300 bg-white/70 p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950/50 dark:text-zinc-300">
+                                {suppHint}
+                            </div>
+                        ) : null}
+
+                        <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-3 text-xs dark:border-zinc-700 dark:bg-zinc-950">
+                            <div className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">Сейчас назначено клиенту</div>
+
+                            {suppDb.plan?.items?.length ? (
+                                <div className="mt-2 space-y-2">
+                                    {suppDb.plan.items.slice(0, 10).map((it, idx) => (
+                                        <div key={`supp-assigned-${idx}-${it.name}`} className="rounded-lg border border-zinc-200 bg-zinc-50 p-2 text-[11px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+                                            <div className="font-semibold">{it.name}</div>
+                                            <div className="mt-1 text-zinc-600 dark:text-zinc-300">
+                                                {it.dose ? <span>{it.dose}</span> : null}
+                                                {it.timing ? <span>{it.dose ? " · " : ""}{it.timing}</span> : null}
+                                                {it.duration ? <span>{(it.dose || it.timing) ? " · " : ""}{it.duration}</span> : null}
+                                            </div>
+                                            {it.purpose ? <div className="mt-1 text-zinc-500">Зачем: {it.purpose}</div> : null}
+                                            {it.cautions?.length ? <div className="mt-1 text-zinc-500">Осторожно: {it.cautions.join(", ")}</div> : null}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="mt-2 text-[11px] text-zinc-500">—</div>
+                            )}
+
+                            {suppDb.plan?.disclaimer ? (
+                                <div className="mt-3 text-[11px] text-zinc-500">Важно: {suppDb.plan.disclaimer}</div>
+                            ) : null}
+                        </div>
+
+                        <details className="mt-3 rounded-xl border border-zinc-200 bg-white p-3 text-xs dark:border-zinc-700 dark:bg-zinc-950">
+                            <summary className="cursor-pointer select-none text-xs font-medium text-zinc-700 dark:text-zinc-200">Редактировать</summary>
+
+                            <div className="mt-3 space-y-3">
+                                <label className="block text-xs">
+                                    <div className="mb-1 text-zinc-500">Общие заметки (опц.)</div>
+                                    <textarea
+                                        rows={2}
+                                        value={suppGeneralNotes}
+                                        onChange={(e) => setSuppGeneralNotes(e.target.value)}
+                                        placeholder="Как принимать, на что обратить внимание, что проверить…"
+                                        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+                                    />
+                                </label>
+
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={addSuppItem}
+                                        className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                                    >
+                                        + Добавить позицию
+                                    </button>
+
+                                    <div className="text-[11px] text-zinc-500">Подсказка: дозировку лучше писать безопасно: «по инструкции» / «диапазон при подтверждённом дефиците».</div>
+                                </div>
+
+                                {suppItems.length ? (
+                                    <div className="space-y-2">
+                                        {suppItems.map((it, idx) => (
+                                            <div key={`supp-edit-${idx}`} className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-700 dark:bg-zinc-900">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">Позиция #{idx + 1}</div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeSuppItem(idx)}
+                                                        className="rounded-full border border-red-200 bg-white px-2.5 py-1 text-[11px] text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:bg-zinc-950 dark:text-red-300 dark:hover:bg-red-950/30"
+                                                    >
+                                                        Удалить
+                                                    </button>
+                                                </div>
+
+                                                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                                    <label className="block">
+                                                        <div className="mb-1 text-[11px] text-zinc-500">Название</div>
+                                                        <input
+                                                            value={it.name}
+                                                            onChange={(e) => updateSuppItem(idx, { name: e.target.value })}
+                                                            placeholder="Напр.: Омега-3"
+                                                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+                                                        />
+                                                    </label>
+
+                                                    <label className="block">
+                                                        <div className="mb-1 text-[11px] text-zinc-500">Дозировка</div>
+                                                        <input
+                                                            value={it.dose}
+                                                            onChange={(e) => updateSuppItem(idx, { dose: e.target.value })}
+                                                            placeholder="По инструкции / 1–2 капс..."
+                                                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+                                                        />
+                                                    </label>
+
+                                                    <label className="block">
+                                                        <div className="mb-1 text-[11px] text-zinc-500">Когда</div>
+                                                        <input
+                                                            value={it.timing}
+                                                            onChange={(e) => updateSuppItem(idx, { timing: e.target.value })}
+                                                            placeholder="Утро / с едой / перед сном"
+                                                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+                                                        />
+                                                    </label>
+
+                                                    <label className="block">
+                                                        <div className="mb-1 text-[11px] text-zinc-500">Срок</div>
+                                                        <input
+                                                            value={it.duration}
+                                                            onChange={(e) => updateSuppItem(idx, { duration: e.target.value })}
+                                                            placeholder="4–8 недель / 2 месяца"
+                                                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+                                                        />
+                                                    </label>
+                                                </div>
+
+                                                <label className="mt-2 block">
+                                                    <div className="mb-1 text-[11px] text-zinc-500">Зачем</div>
+                                                    <input
+                                                        value={it.purpose}
+                                                        onChange={(e) => updateSuppItem(idx, { purpose: e.target.value })}
+                                                        placeholder="Поддержка..."
+                                                        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+                                                    />
+                                                </label>
+
+                                                <label className="mt-2 block">
+                                                    <div className="mb-1 text-[11px] text-zinc-500">Осторожно (через запятую)</div>
+                                                    <input
+                                                        value={(it.cautions ?? []).join(", ")}
+                                                        onChange={(e) => updateSuppItem(idx, { cautions: parseFoodTextareaToArray(e.target.value) })}
+                                                        placeholder="Беременность, антикоагулянты, ЖКТ..."
+                                                        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+                                                    />
+                                                </label>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="rounded-xl border border-dashed border-zinc-300 bg-white/70 p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950/50 dark:text-zinc-300">
+                                        Пока пусто. Можно нажать «ИИ → подобрать» или добавить вручную.
+                                    </div>
+                                )}
                             </div>
                         </details>
                     </div>
