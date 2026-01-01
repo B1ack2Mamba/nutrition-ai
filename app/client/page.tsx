@@ -618,9 +618,9 @@ export default function ClientPage() {
     return (
         <div className="space-y-4">
             <header>
-                <h2 className="text-2xl font-semibold">Мой рацион</h2>
+                <h2 className="text-2xl font-semibold">Мои назначения</h2>
                 <p className="mt-1 text-sm text-zinc-500">
-                    Здесь отображаются текущий назначенный рацион и текущие рекомендации.
+                    Здесь отображаются назначения от специалиста: рацион/меню, продукты, БАДы и комментарии.
                 </p>
             </header>
 
@@ -633,12 +633,12 @@ export default function ClientPage() {
                 ) : null}
             </section>
 
-            {/* текущий активный рацион */}
+            {/* текущее активное назначение (рацион/меню) */}
             <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-semibold">Текущий активный рацион</h3>
+                <h3 className="text-sm font-semibold">Текущее активное назначение (рацион)</h3>
 
                 {!activeAssignment ? (
-                    <p className="mt-2 text-xs text-zinc-500">Пока нет назначенного рациона.</p>
+                    <p className="mt-2 text-xs text-zinc-500">Пока нет активных назначений.</p>
                 ) : (
                     <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
                         <div className="flex items-start justify-between gap-3">

@@ -94,25 +94,29 @@ export async function POST(req: Request) {
     // We create a worker explicitly and point it to known-good local paths.
     const require = createRequire(import.meta.url);
 
-    const resolveFirstExisting = (candidates: string[]) => {
-      for (const modPath of candidates) {
-        try {
-          const p = require.resolve(modPath);
-          if (fs.existsSync(p)) return p;
-        } catch {
-          // continue
-        }
-      }
-      return undefined;
-    };
+    // IMPORTANT for Next/Turbopack:
+    // Do NOT reference optional subpaths like "tesseract.js/dist/worker.js" via require.resolve,
+    // because the bundler will try to resolve them at build time and fail if that file doesn't
+    // exist in the installed tesseract.js version.
+    // Instead, resolve only package.json (always exists), then probe for known worker filenames.
+    const tesseractPkgJson = require.resolve("tesseract.js/package.json");
+    const tesseractRoot = path.dirname(tesseractPkgJson);
 
-    const workerPath = resolveFirstExisting([
-      // Most reliable for local installs (works in both browser and Node worker threads)
-      "tesseract.js/dist/worker.min.js",
-      "tesseract.js/dist/worker.js",
-      // Older layout (just in case)
-      "tesseract.js/src/worker-script/node/index.js",
-    ]);
+    const workerCandidates = [
+      path.join(tesseractRoot, "dist", "worker.min.js"),
+      path.join(tesseractRoot, "dist", "worker.min.mjs"),
+      path.join(tesseractRoot, "dist", "worker.js"),
+      path.join(tesseractRoot, "dist", "worker.mjs"),
+      path.join(tesseractRoot, "src", "worker-script", "node", "index.js"),
+    ];
+
+    const workerPath = workerCandidates.find((p) => {
+      try {
+        return fs.existsSync(p);
+      } catch {
+        return false;
+      }
+    });
 
     const corePkgJson = require.resolve("tesseract.js-core/package.json");
     const corePath = path.dirname(corePkgJson);

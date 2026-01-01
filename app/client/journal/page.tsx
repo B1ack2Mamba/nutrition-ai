@@ -96,11 +96,6 @@ export default function ClientJournalPage() {
 
   const [clientDiaryReply, setClientDiaryReply] = useState<string>("");
 
-  // ИИ-анализ дневника
-  const [diaryAiBusy, setDiaryAiBusy] = useState(false);
-  const [diaryAiError, setDiaryAiError] = useState<string | null>(null);
-  const [diaryAiOut, setDiaryAiOut] = useState<any | null>(null);
-
   const [diary, setDiary] = useState<FoodDiary>({
     wake_time: "",
     bed_time: "",
@@ -160,8 +155,6 @@ export default function ClientJournalPage() {
       setNotes("");
       setClientDiaryReply("");
       setDiary({ wake_time: "", bed_time: "", water_balance: "", sleep_note: "", rows: [] });
-      setDiaryAiOut(null);
-      setDiaryAiError(null);
       return;
     }
 
@@ -173,9 +166,7 @@ export default function ClientJournalPage() {
     setDiary(normalizeDiary(currentEntry.food_diary));
     setClientDiaryReply(currentEntry.client_diary_reply ?? "");
 
-    // сбрасываем AI-результат при переключении дня
-    setDiaryAiOut(null);
-    setDiaryAiError(null);
+    // клиентский дневник: без AI-разбора
   }, [currentEntry]);
 
   const addRow = () => {
@@ -396,39 +387,6 @@ export default function ClientJournalPage() {
     const k = (Number(w) - minW) / (maxW - minW);
     return 10 + k * 90;
   };
-
-  const runDiaryAi = async () => {
-    setDiaryAiBusy(true);
-    setDiaryAiError(null);
-
-    try {
-      const res = await fetch("/api/analyze-diary", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          entry_date: date,
-          diary: {
-            wake_time: diary.wake_time,
-            bed_time: diary.bed_time,
-            water_balance: diary.water_balance,
-            sleep_note: diary.sleep_note,
-            rows: diary.rows,
-          },
-        }),
-      });
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String((json as any)?.error || `Ошибка AI (${res.status})`));
-
-      setDiaryAiOut(json);
-    } catch (e: any) {
-      setDiaryAiError(String(e?.message || e));
-      setDiaryAiOut(null);
-    } finally {
-      setDiaryAiBusy(false);
-    }
-  };
-
 
   return (
     <div className="space-y-6">
@@ -712,61 +670,7 @@ export default function ClientJournalPage() {
             </div>
           </details>
         
-          <div className="mt-4 grid gap-2">
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="font-semibold text-zinc-700 dark:text-zinc-200">ИИ-анализ дефицитов (по дневнику)</div>
-                <button
-                  type="button"
-                  onClick={runDiaryAi}
-                  disabled={diaryAiBusy}
-                  className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                >
-                  {diaryAiBusy ? "Анализирую…" : "Запустить"}
-                </button>
-              </div>
-
-              {diaryAiError ? <div className="mt-2 text-[11px] text-red-600">{diaryAiError}</div> : null}
-
-              {diaryAiOut ? (
-                <details className="mt-2 rounded-lg bg-white p-2 text-[11px] text-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-                  <summary className="cursor-pointer select-none font-medium">Результат</summary>
-                  <div className="mt-2 space-y-2 whitespace-pre-wrap">
-                    <div><b>Коротко:</b> {String((diaryAiOut as any).short_summary || "")}</div>
-
-                    {Array.isArray((diaryAiOut as any).imbalances) && (diaryAiOut as any).imbalances.length ? (
-                      <div>
-                        <b>Перекосы:</b>
-                        <ul className="mt-1 list-disc pl-4">
-                          {(diaryAiOut as any).imbalances.slice(0, 12).map((x: any, i: number) => (
-                            <li key={i}>{String(x)}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-
-                    {Array.isArray((diaryAiOut as any).likely_deficits) && (diaryAiOut as any).likely_deficits.length ? (
-                      <div>
-                        <b>Вероятные дефициты:</b>
-                        <div className="mt-1 space-y-2">
-                          {(diaryAiOut as any).likely_deficits.slice(0, 7).map((d: any, i: number) => (
-                            <div key={i} className="rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
-                              <div className="font-medium">{String(d?.nutrient || "")}{d?.confidence ? ` (${String(d.confidence)})` : ""}</div>
-                              {d?.why ? <div className="mt-1">{String(d.why)}</div> : null}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {(diaryAiOut as any).disclaimer ? (
-                      <div className="text-[10px] text-zinc-500">{String((diaryAiOut as any).disclaimer)}</div>
-                    ) : null}
-                  </div>
-                </details>
-              ) : null}
-            </div>
-
+          <div className="mt-4">
             <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
               <div className="font-semibold text-zinc-700 dark:text-zinc-200">Обратная связь по дневнику</div>
 

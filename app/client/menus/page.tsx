@@ -106,7 +106,7 @@ export default function ClientMenusPage() {
   if (loading) {
     return (
       <div className="space-y-3">
-        <h2 className="text-2xl font-semibold tracking-tight">Мой рацион</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">Мои назначения</h2>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">Загрузка…</p>
       </div>
     );
@@ -115,7 +115,7 @@ export default function ClientMenusPage() {
   if (error) {
     return (
       <div className="space-y-3">
-        <h2 className="text-2xl font-semibold tracking-tight">Мой рацион</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">Мои назначения</h2>
         <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
       </div>
     );
@@ -124,7 +124,7 @@ export default function ClientMenusPage() {
   if (!assignments.length) {
     return (
       <div className="space-y-3">
-        <h2 className="text-2xl font-semibold tracking-tight">Мой рацион</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">Мои назначения</h2>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
           Вам ещё не назначили рацион. Обратитесь к вашему специалисту.
         </p>
@@ -135,7 +135,7 @@ export default function ClientMenusPage() {
   return (
     <div className="flex flex-col gap-4">
       <header className="space-y-1">
-        <h2 className="text-2xl font-semibold tracking-tight">Мой рацион</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">Мои назначения</h2>
         {fullName ? (
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
             Клиент: <span className="font-medium">{fullName}</span>

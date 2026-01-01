@@ -777,7 +777,15 @@ export default function ClientDetailPage() {
                 .eq("user_id", clientId);
 
             if (error) {
-                setDiaryNoteHintByEntryId((p) => ({ ...p, [entryId]: `Ошибка: ${error.message}` }));
+                const msg = String(error.message || "");
+                const isSchemaCache = msg.toLowerCase().includes("schema cache") && msg.includes("nutritionist_diary_note");
+
+                setDiaryNoteHintByEntryId((p) => ({
+                    ...p,
+                    [entryId]: isSchemaCache
+                        ? "Ошибка: колонка nutritionist_diary_note ещё не видна API (schema cache). В Supabase SQL Editor выполни: NOTIFY pgrst, 'reload schema'; затем обнови страницу."
+                        : `Ошибка: ${msg}`,
+                }));
                 setDiaryNoteSavingByEntryId((p) => ({ ...p, [entryId]: false }));
                 return;
             }

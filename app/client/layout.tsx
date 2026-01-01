@@ -49,7 +49,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
 
     const navItems = [
         { href: "/client/specialists", label: "Мои специалисты" },
-        { href: "/client", label: "Мой рацион" },
+        { href: "/client", label: "Мои назначения" },
         { href: "/client/profile", label: "Профиль и цели" },
         { href: "/client/journal", label: "Дневник питания" },
         { href: "/client/training", label: "Тренировки" },
@@ -69,7 +69,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
         <aside className="w-64 border-r border-zinc-200 pr-6 dark:border-zinc-800">
           <h1 className="text-2xl font-semibold tracking-tight">Мой кабинет</h1>
           <p className="mt-1 text-xs text-zinc-500">
-            Ваши рационы и дневник питания
+            Ваши назначения и дневник питания
           </p>
 
                   <nav className="mt-6 flex flex-col gap-2 text-sm">
