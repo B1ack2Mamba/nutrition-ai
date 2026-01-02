@@ -1,15 +1,138 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+
+function MenuIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 6h16" />
+      <path d="M4 12h16" />
+      <path d="M4 18h16" />
+    </svg>
+  );
+}
+
+function CloseIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M18 6 6 18" />
+      <path d="M6 6l12 12" />
+    </svg>
+  );
+}
+
+function ClientNavLink({
+  href,
+  label,
+  onClick,
+}: {
+  href: string;
+  label: string;
+  onClick?: () => void;
+}) {
+  const pathname = usePathname();
+  const active = pathname === href || pathname.startsWith(`${href}/`);
+
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      className={`w-full rounded-full px-4 py-2 text-left text-sm transition ${
+        active
+          ? "bg-black text-white dark:bg-zinc-100 dark:text-black"
+          : "text-zinc-800 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-900"
+      }`}
+    >
+      {label}
+    </Link>
+  );
+}
+
+function SidebarContent({
+  navItems,
+  onNavigate,
+  onSignOut,
+}: {
+  navItems: { href: string; label: string }[];
+  onNavigate?: () => void;
+  onSignOut: () => void;
+}) {
+  return (
+    <div>
+      <h1 className="text-2xl font-semibold tracking-tight">Мой кабинет</h1>
+      <p className="mt-1 text-xs text-zinc-500">Ваши назначения и дневник питания</p>
+
+      <nav className="mt-6 flex flex-col gap-2">
+        {navItems.map((item) => (
+          <ClientNavLink
+            key={item.href}
+            href={item.href}
+            label={item.label}
+            onClick={onNavigate}
+          />
+        ))}
+      </nav>
+
+      <p className="mt-6 text-xs text-zinc-500">
+        Это режим клиента. Для работы нутрициолога используется раздел{" "}
+        <code className="text-[11px]">/nutritionist</code>.
+      </p>
+
+      <button
+        type="button"
+        onClick={onSignOut}
+        className="mt-6 rounded-full border border-zinc-300 px-4 py-2 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+      >
+        Выйти
+      </button>
+    </div>
+  );
+}
 
 export default function ClientLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [checking, setChecking] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const navItems = useMemo(
+    () => [
+      { href: "/client/specialists", label: "Мои специалисты" },
+      { href: "/client", label: "Мои назначения" },
+      { href: "/client/profile", label: "Профиль и цели" },
+      { href: "/client/journal", label: "Дневник питания" },
+      { href: "/client/training", label: "Тренировки" },
+      { href: "/client/notifications", label: "Уведомления" },
+    ],
+    []
+  );
+
+  useEffect(() => {
+    // Закрываем мобильное меню при навигации
+    setSidebarOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     const check = async () => {
@@ -39,71 +162,84 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
     check();
   }, [router, pathname]);
 
-  if (checking) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-zinc-500">
-        Проверяю доступ в клиентский кабинет...
-      </div>
-    );
-  }
-
-    const navItems = [
-        { href: "/client/specialists", label: "Мои специалисты" },
-        { href: "/client", label: "Мои назначения" },
-        { href: "/client/profile", label: "Профиль и цели" },
-        { href: "/client/journal", label: "Дневник питания" },
-        { href: "/client/training", label: "Тренировки" },
-        { href: "/client/notifications", label: "Уведомления" },
-    ];
-
-
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.replace("/auth");
   };
 
+  if (checking) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 text-sm text-zinc-500 dark:bg-black dark:text-zinc-400">
+        Проверяю доступ в клиентский кабинет...
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
-      <main className="mx-auto flex min-h-screen max-w-5xl min-w-0 gap-8 px-4 py-8">
-        {/* Sidebar */}
-        <aside className="w-64 border-r border-zinc-200 pr-6 dark:border-zinc-800">
-          <h1 className="text-2xl font-semibold tracking-tight">Мой кабинет</h1>
-          <p className="mt-1 text-xs text-zinc-500">
-            Ваши назначения и дневник питания
-          </p>
-
-                  <nav className="mt-6 flex flex-col gap-2 text-sm">
-                      {navItems.map((item) => (
-                          <Link
-                              key={item.href}
-                              href={item.href}
-                              className={`w-full rounded-full px-4 py-2 text-left ${pathname === item.href
-                                      ? "bg-black text-white dark:bg-zinc-100 dark:text-black"
-                                      : "text-zinc-800 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                                  }`}
-                          >
-                              {item.label}
-                          </Link>
-                      ))}
-                  </nav>
-
-
-          <p className="mt-6 text-xs text-zinc-500">
-            Это режим клиента. Для работы нутрициолога используется раздел{" "}
-            <code className="text-[11px]">/nutritionist</code>.
-          </p>
-
+      {/* Mobile top bar */}
+      <div className="sticky top-0 z-40 border-b border-zinc-200 bg-zinc-50/90 backdrop-blur dark:border-zinc-800 dark:bg-black/80 md:hidden">
+        <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3">
           <button
             type="button"
-            onClick={handleLogout}
-            className="mt-6 rounded-full border border-zinc-300 px-4 py-2 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            onClick={() => setSidebarOpen(true)}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            aria-label="Открыть меню"
           >
-            Выйти
+            <MenuIcon className="h-5 w-5" />
           </button>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold">Мой кабинет</div>
+            <div className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+              Назначения • Дневник • Анализы
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile drawer */}
+      <div
+        className={`fixed inset-0 z-50 md:hidden ${sidebarOpen ? "" : "pointer-events-none"}`}
+        aria-hidden={!sidebarOpen}
+      >
+        <div
+          className={`absolute inset-0 bg-black/50 transition-opacity ${
+            sidebarOpen ? "opacity-100" : "opacity-0"
+          }`}
+          onClick={() => setSidebarOpen(false)}
+        />
+        <aside
+          className={`absolute inset-y-0 left-0 w-72 max-w-[85vw] overflow-y-auto border-r border-zinc-200 bg-zinc-50 p-4 pt-3 shadow-xl transition-transform dark:border-zinc-800 dark:bg-black ${
+            sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-sm font-semibold">Меню</div>
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(false)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              aria-label="Закрыть меню"
+            >
+              <CloseIcon className="h-5 w-5" />
+            </button>
+          </div>
+          <SidebarContent
+            navItems={navItems}
+            onNavigate={() => setSidebarOpen(false)}
+            onSignOut={handleLogout}
+          />
+        </aside>
+      </div>
+
+      <main className="mx-auto max-w-5xl px-4 pb-10 md:flex md:min-h-screen md:gap-8 md:px-4 md:py-8">
+        {/* Desktop sidebar */}
+        <aside className="hidden w-64 border-r border-zinc-200 pr-6 dark:border-zinc-800 md:block">
+          <SidebarContent navItems={navItems} onSignOut={handleLogout} />
         </aside>
 
         {/* Основной контент */}
-        <section className="flex-1 min-w-0">{children}</section>
+        <section className="min-w-0 flex-1 pt-4 md:pt-0">{children}</section>
       </main>
     </div>
   );
