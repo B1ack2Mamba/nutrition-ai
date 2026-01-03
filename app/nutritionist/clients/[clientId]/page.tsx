@@ -1862,9 +1862,16 @@ if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">За
                 {filteredJournal[0]?.entry_date ? formatDate(filteredJournal[0].entry_date) : "—"}
             </div>
             <div className="mt-1 text-[11px] text-zinc-500">
-                {filteredJournal[0]?.sleep_note ? "Есть заметка про сон" : "Без заметки"}
+                {filteredJournal[0]?.food_diary?.sleep_note || filteredJournal[0]?.food_diary?.sleepNote
+                    ? "Есть заметка про сон"
+                    : "Без заметки"}
                 {" · "}
-                {filteredJournal[0]?.water_balance ? "Вода заполнена" : "Вода не заполнена"}
+                {filteredJournal[0]?.food_diary?.water_balance ||
+                    filteredJournal[0]?.food_diary?.waterBalance ||
+                    filteredJournal[0]?.food_diary?.water_liters ||
+                    filteredJournal[0]?.food_diary?.waterLiters
+                    ? "Вода заполнена"
+                    : "Вода не заполнена"}
             </div>
         </div>
 
