@@ -96,6 +96,8 @@ export default function ClientJournalPage() {
 
   const [clientDiaryReply, setClientDiaryReply] = useState<string>("");
 
+  const [topTab, setTopTab] = useState<"food" | "sleep" | "wellbeing">("food");
+
   const [diary, setDiary] = useState<FoodDiary>({
     wake_time: "",
     bed_time: "",
@@ -403,311 +405,361 @@ export default function ClientJournalPage() {
         onSubmit={handleSubmit}
         className="grid min-w-0 gap-4 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
       >
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <label className="flex flex-col gap-1">
-            Дата
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-            />
-          </label>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <label className="flex flex-col gap-1">
+                    Дата
+                    <input
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                    />
+                  </label>
 
-          <div className="flex items-center gap-2">
-            {editingId ? (
-              <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">Редактирование записи</span>
-            ) : (
-              <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">Новая запись</span>
-            )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                      {editingId ? "Редактирование записи" : "Новая запись"}
+                    </span>
 
-            {editingId ? (
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={saving}
-                className="rounded-full border border-red-200 bg-white px-3 py-2 text-xs text-red-600 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/60 dark:bg-zinc-950 dark:hover:bg-red-950/30"
-              >
-                Удалить день
-              </button>
-            ) : null}
-          </div>
+                    {editingId ? (
+                      <button
+                        type="button"
+                        onClick={handleDelete}
+                        disabled={saving}
+                        className="rounded-full border border-red-200 bg-white px-3 py-2 text-xs text-red-600 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/60 dark:bg-zinc-950 dark:hover:bg-red-950/30"
+                      >
+                        Удалить день
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* Верхние вкладки дневника */}
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex w-full max-w-xl items-center rounded-full bg-zinc-100 p-1 dark:bg-zinc-900">
+                    <button
+                      type="button"
+                      onClick={() => setTopTab("food")}
+                      className={`flex-1 rounded-full px-3 py-2 text-xs font-medium transition ${
+                        topTab === "food"
+                          ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100"
+                          : "text-zinc-600 hover:bg-white/60 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      }`}
+                    >
+                      Питание
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTopTab("sleep")}
+                      className={`flex-1 rounded-full px-3 py-2 text-xs font-medium transition ${
+                        topTab === "sleep"
+                          ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100"
+                          : "text-zinc-600 hover:bg-white/60 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      }`}
+                    >
+                      Сон / вода
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTopTab("wellbeing")}
+                      className={`flex-1 rounded-full px-3 py-2 text-xs font-medium transition ${
+                        topTab === "wellbeing"
+                          ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100"
+                          : "text-zinc-600 hover:bg-white/60 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      }`}
+                    >
+                      Самочувствие
+                    </button>
+                  </div>
+
+                  <div className="text-[11px] text-zinc-500">
+                    {topTab === "food"
+                      ? `строк питания: ${diary.rows.length}`
+                      : topTab === "sleep"
+                        ? "сон и вода за день"
+                        : "вес · энергия · настроение"}
+                  </div>
+                </div>
+
+                {topTab === "wellbeing" ? (
+  <section className="min-w-0 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+    <div className="text-sm font-semibold">Самочувствие</div>
+    <div className="mt-3 grid gap-3 sm:grid-cols-4">
+      <label className="flex flex-col gap-1">
+        Вес (кг)
+        <input
+          type="number"
+          step="0.1"
+          value={weight}
+          onChange={(e) => setWeight(e.target.value)}
+          className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        Энергия (1–10)
+        <input
+          type="number"
+          min={1}
+          max={10}
+          value={energy}
+          onChange={(e) => setEnergy(e.target.value)}
+          className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        Настроение (1–10)
+        <input
+          type="number"
+          min={1}
+          max={10}
+          value={mood}
+          onChange={(e) => setMood(e.target.value)}
+          className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+        />
+      </label>
+      <label className="flex flex-col gap-1 sm:col-span-4">
+        Заметки
+        <textarea
+          rows={3}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+        />
+      </label>
+    </div>
+  </section>
+) : null}
+
+{topTab === "sleep" ? (
+  <section className="min-w-0 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+    <div className="text-sm font-semibold">Сон и вода</div>
+    <div className="mt-3 grid gap-3 sm:grid-cols-3">
+      <label className="flex flex-col gap-1">
+        Время подъёма
+        <input
+          type="time"
+          value={diary.wake_time}
+          onChange={(e) => setDiary((d) => ({ ...d, wake_time: e.target.value }))}
+          className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+        />
+      </label>
+
+      <label className="flex flex-col gap-1">
+        Время отхода ко сну
+        <input
+          type="time"
+          value={diary.bed_time}
+          onChange={(e) => setDiary((d) => ({ ...d, bed_time: e.target.value }))}
+          className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+        />
+      </label>
+
+      <label className="flex flex-col gap-1 sm:col-span-3">
+        Водный баланс за день
+        <textarea
+          rows={2}
+          value={diary.water_balance}
+          onChange={(e) => setDiary((d) => ({ ...d, water_balance: e.target.value }))}
+          placeholder='Напр.: "1 ст + ½ ст + 1 ст + 1 ст = 3,5 ст"'
+          className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+        />
+        <div className="text-[11px] text-zinc-500">Можно писать стаканами/кружками — как удобно.</div>
+      </label>
+
+      <label className="flex flex-col gap-1 sm:col-span-3">
+        Комментарий про сон
+        <textarea
+          rows={3}
+          value={diary.sleep_note}
+          onChange={(e) => setDiary((d) => ({ ...d, sleep_note: e.target.value }))}
+          className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+        />
+      </label>
+    </div>
+  </section>
+) : null}
+
+{topTab === "food" ? (
+  <section className="min-w-0 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="text-sm font-semibold">Питание</div>
+      <div className="text-[11px] text-zinc-500">
+        строк: <span className="font-medium text-zinc-700 dark:text-zinc-200">{diary.rows.length}</span>
+      </div>
+    </div>
+
+    <p className="mt-2 text-xs text-zinc-500">
+      Заполняй так, чтобы по одной строке можно было понять: когда, что, сколько, почему, что почувствовал(а), и какие БАДы/лекарства были.
+    </p>
+
+    <div className="mt-3 w-full max-w-full overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+      <table className="w-full min-w-[980px] border-collapse text-xs">
+        <thead className="bg-zinc-50 dark:bg-zinc-900">
+          <tr>
+            <th className="px-2 py-2 text-left font-medium">Время</th>
+            <th className="px-2 py-2 text-left font-medium">Блюдо, продукты</th>
+            <th className="px-2 py-2 text-left font-medium">Количество</th>
+            <th className="px-2 py-2 text-left font-medium">Причина</th>
+            <th className="px-2 py-2 text-left font-medium">Ощущение</th>
+            <th className="px-2 py-2 text-left font-medium">БАДы/лекарства</th>
+            <th className="px-2 py-2" />
+          </tr>
+        </thead>
+        <tbody>
+          {diary.rows.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="px-2 py-3 text-zinc-500">
+                Пока нет строк. Нажми “Добавить строку”.
+              </td>
+            </tr>
+          ) : (
+            diary.rows.map((r) => (
+              <tr key={r.id} className="border-t border-zinc-100 dark:border-zinc-800">
+                <td className="px-2 py-2 align-top">
+                  <input
+                    type="time"
+                    value={r.time}
+                    onChange={(e) => updateRow(r.id, { time: e.target.value })}
+                    className="w-28 rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                  />
+                </td>
+                <td className="px-2 py-2 align-top">
+                  <input
+                    value={r.dish}
+                    onChange={(e) => updateRow(r.id, { dish: e.target.value })}
+                    placeholder="Напр. гречка + курица"
+                    className="w-[18rem] rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                  />
+                </td>
+                <td className="px-2 py-2 align-top">
+                  <input
+                    value={r.amount}
+                    onChange={(e) => updateRow(r.id, { amount: e.target.value })}
+                    placeholder="200 г / 1 порция"
+                    className="w-36 rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                  />
+                </td>
+                <td className="px-2 py-2 align-top">
+                  <input
+                    value={r.reason}
+                    onChange={(e) => updateRow(r.id, { reason: e.target.value })}
+                    placeholder="голод / привычка..."
+                    className="w-44 rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                  />
+                </td>
+                <td className="px-2 py-2 align-top">
+                  <input
+                    value={r.feeling}
+                    onChange={(e) => updateRow(r.id, { feeling: e.target.value })}
+                    placeholder="сытость / тяжесть..."
+                    className="w-44 rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                  />
+                </td>
+                <td className="px-2 py-2 align-top">
+                  <input
+                    value={r.supplements}
+                    onChange={(e) => updateRow(r.id, { supplements: e.target.value })}
+                    placeholder="омега-3, витамин D..."
+                    className="w-44 rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+                  />
+                </td>
+                <td className="px-2 py-2 align-top text-right">
+                  <button
+                    type="button"
+                    onClick={() => removeRow(r.id)}
+                    className="rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                  >
+                    Удалить
+                  </button>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={addRow}
+        className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+      >
+        Добавить строку
+      </button>
+    </div>
+
+    <details className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
+      <summary className="cursor-pointer select-none text-xs font-semibold text-zinc-700 dark:text-zinc-200">Правила ведения дневника (памятка)</summary>
+
+      <div className="mt-2 space-y-2 text-[12px] text-zinc-700 dark:text-zinc-200">
+        <div>
+          <div className="font-medium">Минимальный срок:</div>
+          <ul className="list-disc pl-5 text-zinc-600 dark:text-zinc-300">
+            <li>веди дневник минимум 5 дней, сохраняя обычный режим и образ жизни;</li>
+            <li>записывай сразу после приёма пищи, чтобы не забыть детали.</li>
+          </ul>
         </div>
 
-        <details open className="min-w-0 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-          <summary className="cursor-pointer select-none text-sm font-semibold">Самочувствие</summary>
-          <div className="mt-3 grid gap-3 sm:grid-cols-4">
-            <label className="flex flex-col gap-1">
-              Вес (кг)
-              <input
-                type="number"
-                step="0.1"
-                value={weight}
-                onChange={(e) => setWeight(e.target.value)}
-                className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              Энергия (1–10)
-              <input
-                type="number"
-                min={1}
-                max={10}
-                value={energy}
-                onChange={(e) => setEnergy(e.target.value)}
-                className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              Настроение (1–10)
-              <input
-                type="number"
-                min={1}
-                max={10}
-                value={mood}
-                onChange={(e) => setMood(e.target.value)}
-                className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-              />
-            </label>
-            <label className="flex flex-col gap-1 sm:col-span-4">
-              Заметки
-              <textarea
-                rows={2}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-              />
-            </label>
-          </div>
+        <div>
+          <div className="font-medium">Что важно фиксировать:</div>
+          <ul className="list-disc pl-5 text-zinc-600 dark:text-zinc-300">
+            <li>время подъёма и отхода ко сну;</li>
+            <li>время приёма пищи, блюдо/продукты и количество (граммы / порции / ложки / чашки и т.д.);</li>
+            <li>причину приёма (голод, желание вкусного, “за компанию”, по расписанию);</li>
+            <li>ощущения после еды (сытость/тяжесть/урчание/изжога/вздутие и т.п.);</li>
+            <li>водный баланс: отмечай выпитую воду в течение дня и подведи итог.</li>
+          </ul>
+        </div>
+
+        <div>
+          <div className="font-medium">Что потом оценивает специалист:</div>
+          <ul className="list-disc pl-5 text-zinc-600 dark:text-zinc-300">
+            <li>качество/количество белка, жиров, углеводов;</li>
+            <li>нутритивную плотность продуктов;</li>
+            <li>разнообразие и сбалансированность блюд;</li>
+            <li>достаточность потребления воды.</li>
+          </ul>
+        </div>
+      </div>
         </details>
+      </section>
+    ) : null}
 
-        <details open className="min-w-0 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-          <summary className="cursor-pointer select-none text-sm font-semibold">Сон и вода</summary>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <label className="flex flex-col gap-1">
-              Время подъёма
-              <input
-                type="time"
-                value={diary.wake_time}
-                onChange={(e) => setDiary((d) => ({ ...d, wake_time: e.target.value }))}
-                className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-              />
-            </label>
+    <div className="mt-4">
+      <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="font-semibold text-zinc-700 dark:text-zinc-200">Обратная связь по дневнику</div>
 
-            <label className="flex flex-col gap-1">
-              Время отхода ко сну
-              <input
-                type="time"
-                value={diary.bed_time}
-                onChange={(e) => setDiary((d) => ({ ...d, bed_time: e.target.value }))}
-                className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-              />
-            </label>
+        <div className="mt-2 rounded-lg border border-zinc-200 bg-white p-2 text-[11px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+          <div className="font-medium">Комментарий нутрициолога</div>
+          <div className="mt-1 whitespace-pre-wrap">{currentEntry?.nutritionist_diary_note ? currentEntry.nutritionist_diary_note : "Пока нет комментария."}</div>
+        </div>
 
-            <label className="flex flex-col gap-1 sm:col-span-3">
-              Водный баланс за день
-              <textarea
-                rows={2}
-                value={diary.water_balance}
-                onChange={(e) => setDiary((d) => ({ ...d, water_balance: e.target.value }))}
-                placeholder='Напр.: "1 ст + ½ ст + 1 ст + 1 ст = 3,5 ст"'
-                className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-              />
-              <div className="text-[11px] text-zinc-500">Можно писать стаканами/кружками — как удобно. Главное: честно и каждый день.</div>
-            </label>
+        <label className="mt-3 flex flex-col gap-1">
+          Моя заметка / что не так (видит специалист)
+          <textarea
+            rows={4}
+            value={clientDiaryReply}
+            onChange={(e) => setClientDiaryReply(e.target.value)}
+            placeholder="Напиши сюда вопросы/ощущения/что было сложно или что кажется неправильным…"
+            className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
+          />
+          <div className="text-[11px] text-zinc-500">Заметка сохранится вместе с записью дня (кнопка «Сохранить изменения»).</div>
+        </label>
+      </div>
+    </div>
 
-            <label className="flex flex-col gap-1 sm:col-span-3">
-              Комментарий про сон
-              <textarea
-                rows={2}
-                value={diary.sleep_note}
-                onChange={(e) => setDiary((d) => ({ ...d, sleep_note: e.target.value }))}
-                className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-              />
-            </label>
-          </div>
-        </details>
+    {error ? <p className="text-xs text-red-500">{error}</p> : null}
+    {hint ? <p className="text-xs text-emerald-600">{hint}</p> : null}
 
-        <details open className="min-w-0 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-          <summary className="cursor-pointer select-none text-sm font-semibold">Дневник питания (таблица строк)</summary>
-
-          <p className="mt-2 text-xs text-zinc-500">
-            Заполняй так, чтобы по одной строке можно было понять: когда, что, сколько, почему, что почувствовал(а), и какие БАДы/лекарства были.
-          </p>
-
-          <div className="mt-3 w-full max-w-full overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
-            <table className="w-full min-w-[980px] border-collapse text-xs">
-              <thead className="bg-zinc-50 dark:bg-zinc-900">
-                <tr>
-                  <th className="px-2 py-2 text-left font-medium">Время</th>
-                  <th className="px-2 py-2 text-left font-medium">Блюдо, продукты</th>
-                  <th className="px-2 py-2 text-left font-medium">Количество</th>
-                  <th className="px-2 py-2 text-left font-medium">Причина</th>
-                  <th className="px-2 py-2 text-left font-medium">Ощущение</th>
-                  <th className="px-2 py-2 text-left font-medium">БАДы/лекарства</th>
-                  <th className="px-2 py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {diary.rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-2 py-3 text-zinc-500">
-                      Пока нет строк. Нажми “Добавить строку”.
-                    </td>
-                  </tr>
-                ) : (
-                  diary.rows.map((r) => (
-                    <tr key={r.id} className="border-t border-zinc-100 dark:border-zinc-800">
-                      <td className="px-2 py-2 align-top">
-                        <input
-                          type="time"
-                          value={r.time}
-                          onChange={(e) => updateRow(r.id, { time: e.target.value })}
-                          className="w-28 rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-                        />
-                      </td>
-                      <td className="px-2 py-2 align-top">
-                        <input
-                          value={r.dish}
-                          onChange={(e) => updateRow(r.id, { dish: e.target.value })}
-                          placeholder="Напр. гречка + курица"
-                          className="w-[18rem] rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-                        />
-                      </td>
-                      <td className="px-2 py-2 align-top">
-                        <input
-                          value={r.amount}
-                          onChange={(e) => updateRow(r.id, { amount: e.target.value })}
-                          placeholder="200 г / 1 порция"
-                          className="w-36 rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-                        />
-                      </td>
-                      <td className="px-2 py-2 align-top">
-                        <input
-                          value={r.reason}
-                          onChange={(e) => updateRow(r.id, { reason: e.target.value })}
-                          placeholder="голод / привычка..."
-                          className="w-44 rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-                        />
-                      </td>
-                      <td className="px-2 py-2 align-top">
-                        <input
-                          value={r.feeling}
-                          onChange={(e) => updateRow(r.id, { feeling: e.target.value })}
-                          placeholder="сытость / тяжесть..."
-                          className="w-44 rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-                        />
-                      </td>
-                      <td className="px-2 py-2 align-top">
-                        <input
-                          value={r.supplements}
-                          onChange={(e) => updateRow(r.id, { supplements: e.target.value })}
-                          placeholder="омега-3, витамин D..."
-                          className="w-44 rounded-lg border border-zinc-300 bg-transparent px-2 py-1 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-                        />
-                      </td>
-                      <td className="px-2 py-2 align-top text-right">
-                        <button
-                          type="button"
-                          onClick={() => removeRow(r.id)}
-                          className="rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                        >
-                          Удалить
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={addRow}
-              className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
-            >
-              Добавить строку
-            </button>
-            <div className="text-xs text-zinc-500">
-              строк: <span className="font-medium text-zinc-700 dark:text-zinc-200">{diary.rows.length}</span>
-            </div>
-          </div>
-
-          <details className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
-            <summary className="cursor-pointer select-none text-xs font-semibold text-zinc-700 dark:text-zinc-200">Правила ведения дневника (памятка)</summary>
-
-            <div className="mt-2 space-y-2 text-[12px] text-zinc-700 dark:text-zinc-200">
-              <div>
-                <div className="font-medium">Минимальный срок:</div>
-                <ul className="list-disc pl-5 text-zinc-600 dark:text-zinc-300">
-                  <li>веди дневник минимум 5 дней, сохраняя обычный режим и образ жизни;</li>
-                  <li>записывай сразу после приёма пищи, чтобы не забыть детали.</li>
-                </ul>
-              </div>
-
-              <div>
-                <div className="font-medium">Что важно фиксировать:</div>
-                <ul className="list-disc pl-5 text-zinc-600 dark:text-zinc-300">
-                  <li>время подъёма и отхода ко сну;</li>
-                  <li>время приёма пищи, блюдо/продукты и количество (граммы / порции / ложки / чашки и т.д.);</li>
-                  <li>причину приёма (голод, желание вкусного, “за компанию”, по расписанию);</li>
-                  <li>ощущения после еды (сытость/тяжесть/урчание/изжога/вздутие и т.п.);</li>
-                  <li>водный баланс: отмечай выпитую воду в течение дня и подведи итог.</li>
-                </ul>
-              </div>
-
-              <div>
-                <div className="font-medium">Что потом оценивает специалист:</div>
-                <ul className="list-disc pl-5 text-zinc-600 dark:text-zinc-300">
-                  <li>качество/количество белка, жиров, углеводов;</li>
-                  <li>нутритивную плотность продуктов;</li>
-                  <li>разнообразие и сбалансированность блюд;</li>
-                  <li>достаточность потребления воды.</li>
-                </ul>
-              </div>
-            </div>
-          </details>
-        
-          <div className="mt-4">
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="font-semibold text-zinc-700 dark:text-zinc-200">Обратная связь по дневнику</div>
-
-              <div className="mt-2 rounded-lg border border-zinc-200 bg-white p-2 text-[11px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-                <div className="font-medium">Комментарий нутрициолога</div>
-                <div className="mt-1 whitespace-pre-wrap">
-                  {currentEntry?.nutritionist_diary_note ? currentEntry.nutritionist_diary_note : "Пока нет комментария."}
-                </div>
-              </div>
-
-              <label className="mt-3 flex flex-col gap-1">
-                Моя заметка / что не так (видит специалист)
-                <textarea
-                  rows={4}
-                  value={clientDiaryReply}
-                  onChange={(e) => setClientDiaryReply(e.target.value)}
-                  placeholder="Напиши сюда вопросы/ощущения/что было сложно или что кажется неправильным…"
-                  className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-200"
-                />
-                <div className="text-[11px] text-zinc-500">Заметка сохранится вместе с записью дня (кнопка «Сохранить изменения»).</div>
-              </label>
-            </div>
-          </div>
-
-        </details>
-
-        {error ? <p className="text-xs text-red-500">{error}</p> : null}
-        {hint ? <p className="text-xs text-emerald-600">{hint}</p> : null}
-
-        <button
-          type="submit"
-          disabled={saving}
-          className="self-start rounded-full bg-black px-5 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
-        >
-          {saving ? "Сохраняю..." : editingId ? "Сохранить изменения" : "Добавить запись"}
-        </button>
-      </form>
+    <button
+      type="submit"
+      disabled={saving}
+      className="self-start rounded-full bg-black px-5 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+    >
+      {saving ? "Сохраняю..." : editingId ? "Сохранить изменения" : "Добавить запись"}
+    </button>
+    </form>
 
       {weightEntries.length > 0 ? (
         <section className="space-y-2 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950">

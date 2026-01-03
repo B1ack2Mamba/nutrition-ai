@@ -104,7 +104,7 @@ function SidebarContent({
   return (
     <div>
       <h1 className="text-2xl font-semibold tracking-tight">Мой кабинет</h1>
-      <p className="mt-1 text-xs text-zinc-500">Главная · Назначения · Дневник · Анализы</p>
+      <p className="mt-1 text-xs text-zinc-500">Главная · Назначения · Дневник · Чат</p>
 
       <nav className="mt-6 flex flex-col gap-2">
         {navItems.map((item) => (
@@ -173,7 +173,11 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
       { href: "/client/journal", label: "Дневник" },
       { href: "/client/analyses", label: "Анализы" },
       { href: "/client/chat", label: "Чат", badge: chatBadge },
-      { href: "/client/settings", label: "Ещё" },
+      { href: "/client/profile", label: "Профиль и анкета" },
+      { href: "/client/specialists", label: "Мои специалисты" },
+      { href: "/client/training", label: "Тренировки" },
+      { href: "/client/notifications", label: "Уведомления" },
+      { href: "/client/settings", label: "Настройки" },
     ];
   }, [chatUnread, chatUnreadCount]);
 
@@ -379,7 +383,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold">Мой кабинет</div>
             <div className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
-              Главная • Назначения • Дневник
+              Главная • Назначения • Дневник • Чат
             </div>
           </div>
 
