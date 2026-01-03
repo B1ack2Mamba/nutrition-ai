@@ -1,864 +1,622 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 type BasicProfile = {
-    id: string;
-    full_name: string | null;
+  id: string;
+  full_name: string | null;
 };
 
 type ExtendedProfile = {
-    user_id: string;
-    main_goal: string | null;
-    goal_description: string | null;
+  user_id: string;
+  main_goal: string | null;
+  goal_description: string | null;
 };
 
 type MenuAssignment = {
-    id: string;
-    client_id: string;
-    nutritionist_id: string;
-    title: string;
-    notes: string | null;
-    status: "active" | "archived" | null;
-    start_date: string | null;
-    end_date: string | null;
-    created_at: string;
-    menu_id: string | null;
-    days_count: number | null;
-    menu_data: unknown | null;
+  id: string;
+  client_id: string;
+  title: string;
+  notes: string | null;
+  status: "active" | "archived" | null;
+  start_date: string | null;
+  end_date: string | null;
+  created_at: string;
+  menu_id: string | null;
+  menu_data: unknown | null;
 };
 
 type FoodRulesRow = {
-    id: string;
-    client_id: string;
-    nutritionist_id: string | null;
-
-    // NEW schema
-    allowed_products?: unknown;
-    banned_products?: unknown;
-
-    // LEGACY schema
-    allowed?: unknown;
-    banned?: unknown;
-
-    notes: string | null;
-    created_at: string;
-    updated_at?: string | null;
+  id: string;
+  client_id: string;
+  nutritionist_id: string | null;
+  // NEW schema
+  allowed_products?: unknown;
+  banned_products?: unknown;
+  // LEGACY schema
+  allowed?: unknown;
+  banned?: unknown;
+  notes: string | null;
+  created_at: string;
+  updated_at?: string | null;
 };
 
 type SupplementItem = {
-    name: string;
-    dose: string;
-    timing: string;
-    duration: string;
-    purpose: string;
-    cautions?: string[];
+  name: string;
+  dose: string;
+  timing: string;
+  duration: string;
+  purpose: string;
+  cautions?: string[];
 };
 
 type SupplementPlan = {
-    rationale_short?: string;
-    items: SupplementItem[];
-    general_notes?: string;
-    disclaimer?: string;
+  rationale_short?: string;
+  items: SupplementItem[];
+  general_notes?: string;
+  disclaimer?: string;
 };
 
 type SupplementPlanRow = {
-    id: string;
-    client_id: string;
-    nutritionist_id: string | null;
-    plan?: unknown;
-    notes?: string | null;
-    created_at: string;
-    updated_at?: string | null;
+  id: string;
+  client_id: string;
+  nutritionist_id: string | null;
+  plan?: unknown;
+  notes?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+};
+
+type JournalEntry = {
+  id: string;
+  user_id: string;
+  entry_date: string;
+  weight_kg: number | null;
+  energy_level: number | null;
+  mood: number | null;
+  food_diary: unknown;
+  water_balance: string | null;
+  wake_time: string | null;
+  bed_time: string | null;
+  client_diary_reply: string | null;
+  nutritionist_diary_note?: string | null;
+};
+
+type LabReport = {
+  id: string;
+  client_id: string;
+  title: string | null;
+  taken_at: string | null;
+  ai_summary: string | null;
+  nutritionist_note?: string | null;
+  created_at: string;
 };
 
 function formatDate(d: string | null | undefined): string {
-    if (!d) return "—";
-    const dt = new Date(d);
-    if (Number.isNaN(dt.getTime())) return "—";
-    return dt.toLocaleDateString();
+  if (!d) return "—";
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return "—";
+  return dt.toLocaleDateString();
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
-    return typeof v === "object" && v !== null && !Array.isArray(v);
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 function asRecord(v: unknown): Record<string, unknown> {
-    return isRecord(v) ? v : {};
-}
-
-function normalizeSupplementPlan(raw: unknown): SupplementPlan {
-    const r = asRecord(raw);
-    const out: SupplementPlan = { items: [] };
-
-    const rationale = getString(r.rationale_short);
-    if (rationale) out.rationale_short = rationale;
-
-    const generalNotes = getString(r.general_notes);
-    if (generalNotes) out.general_notes = generalNotes;
-
-    const disclaimer = getString(r.disclaimer);
-    if (disclaimer) out.disclaimer = disclaimer;
-
-    const itemsRaw = Array.isArray(r.items) ? r.items : [];
-    const items: SupplementItem[] = [];
-    for (const it of itemsRaw) {
-        const i = asRecord(it);
-        const name = getString(i.name);
-        if (!name) continue;
-        items.push({
-            name,
-            dose: getString(i.dose) ?? "",
-            timing: getString(i.timing) ?? "",
-            duration: getString(i.duration) ?? "",
-            purpose: getString(i.purpose) ?? "",
-            cautions: Array.isArray(i.cautions) ? i.cautions.map((x) => String(x)).filter(Boolean).slice(0, 12) : [],
-        });
-    }
-    out.items = items;
-    return out;
+  return isRecord(v) ? v : {};
 }
 
 function getString(v: unknown): string | null {
-    if (typeof v === "string") {
-        const t = v.trim();
-        return t ? t : null;
-    }
-    if (typeof v === "number") return String(v);
-    return null;
+  if (typeof v === "string") {
+    const t = v.trim();
+    return t ? t : null;
+  }
+  if (typeof v === "number") return String(v);
+  return null;
 }
 
-function pickFirstNonEmpty<T>(...lists: T[][]): T[] {
-    for (const l of lists) {
-        if (Array.isArray(l) && l.length) return l;
-    }
-    return [];
-}
+function normalizeSupplementPlan(raw: unknown): SupplementPlan {
+  const r = asRecord(raw);
+  const out: SupplementPlan = { items: [] };
 
-/**
- * Принимает что угодно:
- * - string
- * - string[]
- * - jsonb массив
- * - null
- * - number/bool
- * И возвращает список токенов.
- */
-function splitList(value: unknown): string[] {
-    const out: string[] = [];
+  const rationale = getString(r.rationale_short);
+  if (rationale) out.rationale_short = rationale;
 
-    const add = (v: unknown) => {
-        if (v == null) return;
+  const generalNotes = getString(r.general_notes);
+  if (generalNotes) out.general_notes = generalNotes;
 
-        if (Array.isArray(v)) {
-            for (const item of v) add(item);
-            return;
-        }
+  const disclaimer = getString(r.disclaimer);
+  if (disclaimer) out.disclaimer = disclaimer;
 
-        if (typeof v === "string") {
-            for (const part of v.split(/[,;\n]/g)) {
-                const t = part.trim();
-                if (t) out.push(t);
-            }
-            return;
-        }
-
-        if (typeof v === "number" || typeof v === "boolean") {
-            out.push(String(v));
-            return;
-        }
-    };
-
-    add(value);
-    return Array.from(new Set(out.map((x) => x.trim()).filter(Boolean))).slice(0, 60);
-}
-
-type DishView = {
-    name: string;
-    details?: string;
-    ingredients?: string[];
-    steps?: string[];
-};
-
-type MealView = {
-    name: string;
-    dishes: DishView[];
-};
-
-type DayView = {
-    label: string;
-    meals: MealView[];
-};
-
-function recordLooksLikeDish(r: Record<string, unknown>): boolean {
-    return (
-        "ingredients" in r ||
-        "products" in r ||
-        "steps" in r ||
-        "instructions" in r ||
-        "cooking" in r ||
-        "kcal" in r ||
-        "calories" in r ||
-        "energy" in r ||
-        "dish" in r ||
-        "recipe_name" in r
-    );
-}
-
-function recordLooksLikeMeal(r: Record<string, unknown>): boolean {
-    return (
-        "dishes" in r ||
-        "items" in r ||
-        "recipes" in r ||
-        "recipe" in r ||
-        "value" in r ||
-        "products" in r
-    );
-}
-
-function toList(value: unknown, opts?: { treatRecordAsSingleIfLooksLike?: (r: Record<string, unknown>) => boolean }): unknown[] {
-    if (Array.isArray(value)) return value;
-    if (isRecord(value)) {
-        if (opts?.treatRecordAsSingleIfLooksLike && opts.treatRecordAsSingleIfLooksLike(value)) return [value];
-        return Object.values(value);
-    }
-    return [];
-}
-
-function extractDays(menu: unknown): unknown[] {
-    const m = asRecord(menu);
-    // days / plan / items / weeks и т.п.
-    const candidates = [m.days, m.plan, m.items, m.weeks, m.week, m.schedule];
-    for (const c of candidates) {
-        const list = toList(c);
-        if (list.length) return list;
-    }
-    return [];
-}
-
-function normalizeMeals(day: unknown): unknown[] {
-    const d = asRecord(day);
-    const meals = d.meals ?? d.meal ?? d.menu ?? d.ration;
-
-    if (Array.isArray(meals)) return meals;
-
-    if (isRecord(meals)) {
-        // если это реально один meal-объект
-        if (recordLooksLikeMeal(meals)) return [meals];
-
-        // иначе это словарь типа { lunch: {...}, dinner: {...} }
-        return Object.entries(meals).map(([k, v]) => ({
-            name: k,
-            ...(isRecord(v) ? v : { value: v }),
-        }));
-    }
-
-    // fallback: иногда meals лежат прямо в day как ключи breakfast/lunch/dinner
-    const maybeMealKeys = ["breakfast", "lunch", "dinner", "snack", "snacks", "supper"];
-    const out: unknown[] = [];
-    for (const key of maybeMealKeys) {
-        if (key in d) out.push({ name: key, value: d[key] }); // ✅ без any
-    }
-    return out;
-}
-
-function normalizeDishes(meal: unknown): unknown[] {
-    const m = asRecord(meal);
-
-    const candidates = [m.dishes, m.items, m.recipes, m.recipe, m.meals, m.value, m.products, m.components];
-    for (const c of candidates) {
-        const list = toList(c, { treatRecordAsSingleIfLooksLike: recordLooksLikeDish });
-        if (list.length) return list;
-    }
-
-    // глубже: если кто-то запихнул dishes внутрь nested-объекта
-    for (const v of Object.values(m)) {
-        const list = toList(v, { treatRecordAsSingleIfLooksLike: recordLooksLikeDish });
-        if (list.length) return list;
-
-        if (isRecord(v)) {
-            const list2 = toList(v.dishes ?? v.items ?? v.recipes ?? v.recipe ?? v.value ?? v.products, {
-                treatRecordAsSingleIfLooksLike: recordLooksLikeDish,
-            });
-            if (list2.length) return list2;
-        }
-    }
-
-    return [];
-}
-
-function normalizeSteps(v: unknown): string[] {
-    if (!v) return [];
-    if (Array.isArray(v)) {
-        return v
-            .map((x) => (typeof x === "string" ? x.trim() : ""))
-            .filter(Boolean)
-            .slice(0, 25);
-    }
-    if (typeof v === "string") {
-        return v
-            .split(/\n+/g)
-            .map((x) => x.trim())
-            .filter(Boolean)
-            .slice(0, 25);
-    }
-    return [];
-}
-
-function normalizeIngredients(v: unknown): string[] {
-    if (!v) return [];
-    if (Array.isArray(v)) {
-        return v
-            .map((x) => {
-                if (typeof x === "string") return x.trim();
-                if (isRecord(x)) {
-                    const n = getString(x.name) || getString(x.title) || getString(x.product);
-                    const g = getString(x.grams) || getString(x.amount) || getString(x.qty);
-                    return [n, g].filter(Boolean).join(" ");
-                }
-                return "";
-            })
-            .filter(Boolean)
-            .slice(0, 50);
-    }
-    if (typeof v === "string") {
-        return v
-            .split(/[,;\n]/g)
-            .map((x) => x.trim())
-            .filter(Boolean)
-            .slice(0, 50);
-    }
-    if (isRecord(v)) {
-        return normalizeIngredients(Object.values(v));
-    }
-    return [];
-}
-
-function buildMenuView(menu: unknown): DayView[] {
-    const days = extractDays(menu).slice(0, 60);
-
-    return days.map((day, dayIndex) => {
-        const d = asRecord(day);
-        const label = getString(d.day) || getString(d.title) || getString(d.name) || `Day ${dayIndex + 1}`;
-
-        const meals = normalizeMeals(day)
-            .slice(0, 30)
-            .map((meal, mealIndex) => {
-                const m = asRecord(meal);
-                const mealName = getString(m.name) || getString(m.title) || getString(m.type) || `Meal ${mealIndex + 1}`;
-
-                const dishes = normalizeDishes(meal)
-                    .slice(0, 120)
-                    .map((dish) => {
-                        if (typeof dish === "string") {
-                            return { name: dish.trim() || "Блюдо" } as DishView;
-                        }
-
-                        const di = asRecord(dish);
-
-                        const name =
-                            getString(di.name) ||
-                            getString(di.title) ||
-                            getString(di.dish) ||
-                            getString(di.recipe_name) ||
-                            "Блюдо";
-
-                        const grams = getString(di.grams) || getString(di.amount) || getString(di.portion);
-                        const kcal = getString(di.kcal) || getString(di.calories) || getString(di.energy);
-
-                        const details = [grams ? `порция: ${grams}` : null, kcal ? `ккал: ${kcal}` : null]
-                            .filter(Boolean)
-                            .join(" · ");
-
-                        const ingredients = pickFirstNonEmpty(
-                            normalizeIngredients(di.ingredients),
-                            normalizeIngredients(di.products),
-                            normalizeIngredients(di.items),
-                            normalizeIngredients(di.components),
-                        );
-
-                        const steps = pickFirstNonEmpty(
-                            normalizeSteps(di.steps),
-                            normalizeSteps(di.instructions),
-                            normalizeSteps(di.cooking),
-                            normalizeSteps(di.recipe),
-                        );
-
-                        return {
-                            name,
-                            details: details || undefined,
-                            ingredients: ingredients.length ? ingredients : undefined,
-                            steps: steps.length ? steps : undefined,
-                        };
-                    });
-
-                return { name: mealName, dishes };
-            });
-
-        return { label, meals };
+  const itemsRaw = Array.isArray(r.items) ? r.items : [];
+  const items: SupplementItem[] = [];
+  for (const it of itemsRaw) {
+    const i = asRecord(it);
+    const name = getString(i.name);
+    if (!name) continue;
+    items.push({
+      name,
+      dose: getString(i.dose) ?? "",
+      timing: getString(i.timing) ?? "",
+      duration: getString(i.duration) ?? "",
+      purpose: getString(i.purpose) ?? "",
+      cautions: Array.isArray(i.cautions)
+        ? i.cautions.map((x) => String(x)).filter(Boolean).slice(0, 12)
+        : [],
     });
+  }
+  out.items = items;
+  return out;
 }
 
-function isAuthRefreshTokenErrorMessage(msg: string) {
-    const m = msg.toLowerCase();
-    return m.includes("refresh token") || m.includes("invalid refresh token");
+function splitList(value: unknown): string[] {
+  const out: string[] = [];
+
+  const add = (v: unknown) => {
+    if (v == null) return;
+    if (Array.isArray(v)) {
+      for (const item of v) add(item);
+      return;
+    }
+    if (typeof v === "string") {
+      for (const part of v.split(/[,;\n]/g)) {
+        const t = part.trim();
+        if (t) out.push(t);
+      }
+      return;
+    }
+    if (typeof v === "number" || typeof v === "boolean") {
+      out.push(String(v));
+    }
+  };
+
+  add(value);
+  return Array.from(new Set(out.map((x) => x.trim()).filter(Boolean))).slice(0, 80);
 }
 
-export default function ClientPage() {
-    const [loading, setLoading] = useState(true);
-    const [fatalError, setFatalError] = useState<string | null>(null);
+function diaryRowCount(foodDiary: unknown): number {
+  const r = asRecord(foodDiary);
+  const rows = r.rows;
+  if (Array.isArray(rows)) return rows.length;
+  return 0;
+}
 
-    const [basic, setBasic] = useState<BasicProfile | null>(null);
-    const [extended, setExtended] = useState<ExtendedProfile | null>(null);
-
-    const [assignments, setAssignments] = useState<MenuAssignment[]>([]);
-    const [currentFood, setCurrentFood] = useState<FoodRulesRow | null>(null);
-    const [foodHint, setFoodHint] = useState<string | null>(null);
-
-    const [currentSupp, setCurrentSupp] = useState<SupplementPlanRow | null>(null);
-    const [suppHint, setSuppHint] = useState<string | null>(null);
-
-    const reloadFood = useCallback(async (clientId: string) => {
-        // Сначала updated_at -> затем created_at (и фоллбек если колонки нет)
-        const q1 = await supabase
-            .from("client_food_rules")
-            .select("*")
-            .eq("client_id", clientId)
-            .order("updated_at", { ascending: false })
-            .order("created_at", { ascending: false })
-            .limit(1);
-
-        if (q1.error) {
-            const msg = q1.error.message.toLowerCase();
-            if (msg.includes("updated_at") && msg.includes("does not exist")) {
-                const q2 = await supabase
-                    .from("client_food_rules")
-                    .select("*")
-                    .eq("client_id", clientId)
-                    .order("created_at", { ascending: false })
-                    .limit(1);
-
-                if (q2.error) {
-                    setFoodHint("Рекомендации по продуктам недоступны (таблица/права/RLS).");
-                    setCurrentFood(null);
-                    return;
-                }
-
-                setFoodHint(null);
-                setCurrentFood((q2.data?.[0] as FoodRulesRow | undefined) ?? null);
-                return;
-            }
-
-            setFoodHint("Рекомендации по продуктам недоступны (таблица/права/RLS).");
-            setCurrentFood(null);
-            return;
-        }
-
-        setFoodHint(null);
-        setCurrentFood((q1.data?.[0] as FoodRulesRow | undefined) ?? null);
-    }, []);
-
-    const reloadSupplements = useCallback(async (clientId: string) => {
-        const q1 = await supabase
-            .from("client_supplement_plans")
-            .select("*")
-            .eq("client_id", clientId)
-            .order("updated_at", { ascending: false })
-            .order("created_at", { ascending: false })
-            .limit(1);
-
-        if (q1.error) {
-            const msg = q1.error.message.toLowerCase();
-            if (msg.includes("updated_at") && msg.includes("does not exist")) {
-                const q2 = await supabase
-                    .from("client_supplement_plans")
-                    .select("*")
-                    .eq("client_id", clientId)
-                    .order("created_at", { ascending: false })
-                    .limit(1);
-
-                if (q2.error) {
-                    setSuppHint("БАДы недоступны (таблица client_supplement_plans или права/RLS).")
-                    setCurrentSupp(null);
-                    return;
-                }
-
-                setSuppHint(null);
-                setCurrentSupp((q2.data?.[0] as SupplementPlanRow | undefined) ?? null);
-                return;
-            }
-
-            setSuppHint("БАДы недоступны (таблица client_supplement_plans или права/RLS).");
-            setCurrentSupp(null);
-            return;
-        }
-
-        setSuppHint(null);
-        setCurrentSupp((q1.data?.[0] as SupplementPlanRow | undefined) ?? null);
-    }, []);
-    useEffect(() => {
-        const load = async () => {
-            setLoading(true);
-            setFatalError(null);
-
-            try {
-                const { data, error } = await supabase.auth.getUser();
-                if (error) {
-                    if (isAuthRefreshTokenErrorMessage(error.message)) {
-                        await supabase.auth.signOut();
-                        setFatalError("Сессия истекла. Войдите снова.");
-                        setLoading(false);
-                        return;
-                    }
-                    setFatalError(error.message);
-                    setLoading(false);
-                    return;
-                }
-
-                const user = data.user;
-                if (!user) {
-                    setFatalError("Нет авторизации");
-                    setLoading(false);
-                    return;
-                }
-
-                const { data: prof, error: profErr } = await supabase
-                    .from("profiles")
-                    .select("id, full_name")
-                    .eq("id", user.id)
-                    .single();
-
-                if (profErr) {
-                    setFatalError(profErr.message);
-                    setLoading(false);
-                    return;
-                }
-                setBasic(prof as BasicProfile);
-
-                const { data: extRows } = await supabase
-                    .from("client_profiles")
-                    .select("user_id, main_goal, goal_description")
-                    .eq("user_id", user.id)
-                    .limit(1);
-
-                if (extRows && extRows.length > 0) setExtended(extRows[0] as ExtendedProfile);
-                else setExtended(null);
-
-                const { data: assRows, error: assErr } = await supabase
-                    .from("client_menu_assignments")
-                    .select("*")
-                    .eq("client_id", user.id)
-                    .order("created_at", { ascending: false });
-
-                if (assErr) {
-                    setFatalError(assErr.message);
-                    setLoading(false);
-                    return;
-                }
-                setAssignments((assRows ?? []) as MenuAssignment[]);
-
-                await reloadFood(user.id);
-                await reloadSupplements(user.id);
-
-                setLoading(false);
-            } catch (e) {
-                const msg = e instanceof Error ? e.message : String(e);
-                setFatalError(msg);
-                setLoading(false);
-            }
-        };
-
-        load();
-    }, [reloadFood, reloadSupplements]);
-
-    const menuAssignments = useMemo(() => {
-        return assignments.filter((a) => !!a.menu_id || !!a.menu_data);
-    }, [assignments]);
-
-    const activeAssignment = useMemo(() => {
-        const explicit = menuAssignments.find((a) => a.status === "active");
-        return explicit ?? menuAssignments[0] ?? null;
-    }, [menuAssignments]);
-
-    const menuData = activeAssignment?.menu_data ?? null;
-
-    const menuView = useMemo(() => {
-        return menuData ? buildMenuView(menuData) : [];
-    }, [menuData]);
-
-    // ✅ поддержка обоих вариантов колонок
-    const allowedTokens = useMemo(
-        () => splitList(currentFood?.allowed_products ?? currentFood?.allowed),
-        [currentFood],
-    );
-    const bannedTokens = useMemo(
-        () => splitList(currentFood?.banned_products ?? currentFood?.banned),
-        [currentFood],
-    );
-
-    const foodUpdatedAt = useMemo(() => {
-        if (!currentFood) return null;
-        return currentFood.updated_at ?? currentFood.created_at;
-    }, [currentFood]);
-
-    const supplementPlan = useMemo(() => {
-        if (!currentSupp) return { items: [] as SupplementItem[] } as SupplementPlan;
-        return normalizeSupplementPlan(currentSupp.plan);
-    }, [currentSupp]);
-
-    const supplementsUpdatedAt = useMemo(() => {
-        if (!currentSupp) return null;
-        return currentSupp.updated_at ?? currentSupp.created_at;
-    }, [currentSupp]);
-
-    if (loading) return <p className="text-sm text-zinc-500">Загружаю…</p>;
-    if (fatalError) return <p className="text-sm text-red-500">{fatalError}</p>;
-
-    return (
-        <div className="space-y-4">
-            <header>
-                <h2 className="text-2xl font-semibold">Мои назначения</h2>
-                <p className="mt-1 text-sm text-zinc-500">
-                    Здесь отображаются назначения от специалиста: рацион/меню, продукты, БАДы и комментарии.
-                </p>
-            </header>
-
-            {/* цель */}
-            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-                <div className="text-xs text-zinc-500">Цель</div>
-                <div className="mt-1 text-base font-semibold">{extended?.main_goal || "—"}</div>
-                {extended?.goal_description ? (
-                    <div className="mt-1 text-sm text-zinc-600">{extended.goal_description}</div>
-                ) : null}
-            </section>
-
-            {/* текущее активное назначение (рацион/меню) */}
-            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-semibold">Текущее активное назначение (рацион)</h3>
-
-                {!activeAssignment ? (
-                    <p className="mt-2 text-xs text-zinc-500">Пока нет активных назначений.</p>
-                ) : (
-                    <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
-                        <div className="flex items-start justify-between gap-3">
-                            <div>
-                                <div className="text-sm font-semibold">{activeAssignment.title}</div>
-                                <div className="mt-1 text-xs text-zinc-500">
-                                    {activeAssignment.start_date
-                                        ? `Назначен ${formatDate(activeAssignment.start_date)}`
-                                        : `Назначен ${formatDate(activeAssignment.created_at)}`}
-                                    {activeAssignment.end_date ? ` · до ${formatDate(activeAssignment.end_date)}` : ""}
-                                </div>
-                                {activeAssignment.notes ? (
-                                    <div className="mt-2 text-xs text-zinc-600">
-                                        <span className="text-zinc-500">Комментарий:</span> {activeAssignment.notes}
-                                    </div>
-                                ) : null}
-                            </div>
-                            <span className="rounded-full bg-black px-2 py-0.5 text-[10px] font-medium text-white">
-                                активный
-                            </span>
-                        </div>
-
-                        <details className="mt-3">
-                            <summary className="cursor-pointer text-xs font-medium text-zinc-700 underline underline-offset-4">
-                                Открыть меню (блюда и готовка)
-                            </summary>
-
-                            {!activeAssignment.menu_data ? (
-                                <div className="mt-2 text-xs text-zinc-500">В этом назначении нет данных меню.</div>
-                            ) : (
-                                <div className="mt-3 max-h-[520px] overflow-auto rounded-xl border border-zinc-200 bg-white p-3">
-                                    <div className="space-y-3">
-                                        {menuView.length === 0 ? (
-                                            <div className="text-xs text-zinc-500">
-                                                Меню есть, но структура нестандартная — парсер не нашёл дни/приёмы пищи.
-                                            </div>
-                                        ) : (
-                                            menuView.map((day, di) => (
-                                                <details
-                                                    key={`${day.label}-${di}`}
-                                                    className="rounded-lg border border-zinc-200 p-3"
-                                                >
-                                                    <summary className="cursor-pointer text-sm font-semibold">{day.label}</summary>
-
-                                                    <div className="mt-3 space-y-3">
-                                                        {day.meals.map((meal, mi) => (
-                                                            <details
-                                                                key={`${meal.name}-${mi}`}
-                                                                className="rounded-lg bg-zinc-50 p-3"
-                                                            >
-                                                                <summary className="cursor-pointer text-xs font-semibold">{meal.name}</summary>
-
-                                                                <div className="mt-2 space-y-2">
-                                                                    {meal.dishes.length === 0 ? (
-                                                                        <div className="text-xs text-zinc-500">Блюда не указаны.</div>
-                                                                    ) : (
-                                                                        meal.dishes.map((dish, xi) => (
-                                                                            <div
-                                                                                key={`${dish.name}-${xi}`}
-                                                                                className="rounded-lg border border-zinc-200 bg-white p-3"
-                                                                            >
-                                                                                <div className="text-sm font-semibold">{dish.name}</div>
-                                                                                {dish.details ? (
-                                                                                    <div className="mt-1 text-xs text-zinc-500">{dish.details}</div>
-                                                                                ) : null}
-
-                                                                                {dish.ingredients?.length ? (
-                                                                                    <div className="mt-2">
-                                                                                        <div className="text-xs font-semibold text-zinc-700">Ингредиенты</div>
-                                                                                        <ul className="mt-1 list-disc pl-5 text-xs text-zinc-600">
-                                                                                            {dish.ingredients.map((ing) => (
-                                                                                                <li key={ing}>{ing}</li>
-                                                                                            ))}
-                                                                                        </ul>
-                                                                                    </div>
-                                                                                ) : null}
-
-                                                                                {dish.steps?.length ? (
-                                                                                    <div className="mt-2">
-                                                                                        <div className="text-xs font-semibold text-zinc-700">Приготовление</div>
-                                                                                        <ol className="mt-1 list-decimal pl-5 text-xs text-zinc-600">
-                                                                                            {dish.steps.map((st, si) => (
-                                                                                                <li key={`${si}-${st}`}>{st}</li>
-                                                                                            ))}
-                                                                                        </ol>
-                                                                                    </div>
-                                                                                ) : null}
-                                                                            </div>
-                                                                        ))
-                                                                    )}
-                                                                </div>
-                                                            </details>
-                                                        ))}
-                                                    </div>
-                                                </details>
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                        </details>
-                    </div>
-                )}
-            </section>
-
-            {/* продукты */}
-            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                    <h3 className="text-sm font-semibold">Разрешённые и запрещённые продукты</h3>
-
-                    {basic?.id ? (
-                        <button
-                            type="button"
-                            onClick={() => {
-                                reloadFood(basic.id);
-                                reloadSupplements(basic.id);
-                            }}
-                            className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100"
-                        >
-                            Обновить
-                        </button>
-                    ) : null}
-                </div>
-
-                {foodHint ? (
-                    <p className="mt-2 text-xs text-zinc-500">{foodHint}</p>
-                ) : !currentFood ? (
-                    <p className="mt-2 text-xs text-zinc-500">Пока нет рекомендаций.</p>
-                ) : (
-                    <>
-                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-xl bg-zinc-50 p-3">
-                                <div className="text-xs font-semibold text-zinc-700">Можно</div>
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                    {allowedTokens.length ? (
-                                        allowedTokens.map((x) => (
-                                            <span key={x} className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs">
-                                                {x}
-                                            </span>
-                                        ))
-                                    ) : (
-                                        <span className="text-xs text-zinc-500">—</span>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="rounded-xl bg-zinc-50 p-3">
-                                <div className="text-xs font-semibold text-zinc-700">Нельзя</div>
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                    {bannedTokens.length ? (
-                                        bannedTokens.map((x) => (
-                                            <span key={x} className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs">
-                                                {x}
-                                            </span>
-                                        ))
-                                    ) : (
-                                        <span className="text-xs text-zinc-500">—</span>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
-                        {currentFood.notes ? (
-                            <div className="mt-3 text-xs text-zinc-600">
-                                <span className="text-zinc-500">Комментарий:</span> {currentFood.notes}
-                            </div>
-                        ) : null}
-
-                        <div className="mt-2 text-[11px] text-zinc-500">
-                            Обновлено: {formatDate(foodUpdatedAt)}
-                        </div>
-                    </>
-                )}
-
-                {/* БАДы (в том же разделе) */}
-                <div className="mt-4 rounded-xl bg-zinc-50 p-3">
-                    <div className="text-xs font-semibold text-zinc-700">БАДы</div>
-
-                    {suppHint ? (
-                        <p className="mt-2 text-xs text-zinc-500">{suppHint}</p>
-                    ) : !currentSupp || !supplementPlan.items?.length ? (
-                        <p className="mt-2 text-xs text-zinc-500">Пока ничего не назначено.</p>
-                    ) : (
-                        <>
-                            {supplementPlan.rationale_short ? (
-                                <div className="mt-2 text-xs text-zinc-600">
-                                    <span className="text-zinc-500">Зачем:</span> {supplementPlan.rationale_short}
-                                </div>
-                            ) : null}
-
-                            {supplementPlan.general_notes ? (
-                                <div className="mt-2 text-xs text-zinc-600">
-                                    <span className="text-zinc-500">Заметки:</span> {supplementPlan.general_notes}
-                                </div>
-                            ) : null}
-
-                            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                                {supplementPlan.items.slice(0, 12).map((it, idx) => (
-                                    <div key={`supp-${idx}-${it.name}`} className="rounded-xl border border-zinc-200 bg-white p-3">
-                                        <div className="text-xs font-semibold text-zinc-700">{it.name}</div>
-                                        <div className="mt-1 text-xs text-zinc-500">
-                                            {it.dose ? <span>{it.dose}</span> : null}
-                                            {it.timing ? <span>{it.dose ? " · " : ""}{it.timing}</span> : null}
-                                            {it.duration ? <span>{(it.dose || it.timing) ? " · " : ""}{it.duration}</span> : null}
-                                        </div>
-                                        {it.purpose ? <div className="mt-2 text-xs text-zinc-600"><span className="text-zinc-500">Цель:</span> {it.purpose}</div> : null}
-                                        {it.cautions?.length ? <div className="mt-2 text-[11px] text-zinc-500">Осторожно: {it.cautions.join(", ")}</div> : null}
-                                    </div>
-                                ))}
-                            </div>
-
-                            {supplementPlan.disclaimer ? (
-                                <div className="mt-3 text-[11px] text-zinc-500">Важно: {supplementPlan.disclaimer}</div>
-                            ) : null}
-
-                            <div className="mt-2 text-[11px] text-zinc-500">Обновлено: {formatDate(supplementsUpdatedAt)}</div>
-                        </>
-                    )}
-                </div>
-            </section>
+function Card({
+  title,
+  subtitle,
+  children,
+  action,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold">{title}</div>
+          {subtitle ? (
+            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{subtitle}</div>
+          ) : null}
         </div>
-    );
+        {action ? <div className="shrink-0">{action}</div> : null}
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+function Pill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+      {children}
+    </span>
+  );
+}
+
+export default function ClientDashboardPage() {
+  const [loading, setLoading] = useState(true);
+  const [fatalError, setFatalError] = useState<string | null>(null);
+
+  const [basic, setBasic] = useState<BasicProfile | null>(null);
+  const [extended, setExtended] = useState<ExtendedProfile | null>(null);
+  const [activeAssignment, setActiveAssignment] = useState<MenuAssignment | null>(null);
+  const [foodRules, setFoodRules] = useState<FoodRulesRow | null>(null);
+  const [suppRow, setSuppRow] = useState<SupplementPlanRow | null>(null);
+  const [journal, setJournal] = useState<JournalEntry[]>([]);
+  const [lastLab, setLastLab] = useState<LabReport | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      setLoading(true);
+      setFatalError(null);
+
+      const auth = await supabase.auth.getUser();
+      if (auth.error || !auth.data.user) {
+        setFatalError("Нет авторизации");
+        setLoading(false);
+        return;
+      }
+
+      const uid = auth.data.user.id;
+
+      const [p, cp, ma, fr, sp, je, lr] = await Promise.all([
+        supabase.from("profiles").select("id, full_name").eq("id", uid).single(),
+        supabase
+          .from("client_profiles")
+          .select("user_id, main_goal, goal_description")
+          .eq("user_id", uid)
+          .single(),
+        supabase
+          .from("menu_assignments")
+          .select("*")
+          .eq("client_id", uid)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(1),
+        supabase
+          .from("client_food_rules")
+          .select("*")
+          .eq("client_id", uid)
+          .order("updated_at", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(1),
+        supabase
+          .from("client_supplement_plans")
+          .select("*")
+          .eq("client_id", uid)
+          .order("updated_at", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(1),
+        supabase
+          .from("client_journal_entries")
+          .select(
+            "id,user_id,entry_date,weight_kg,energy_level,mood,food_diary,water_balance,wake_time,bed_time,client_diary_reply,nutritionist_diary_note"
+          )
+          .eq("user_id", uid)
+          .order("entry_date", { ascending: false })
+          .limit(21),
+        supabase
+          .from("client_lab_reports")
+          .select("id,client_id,title,taken_at,ai_summary,nutritionist_note,created_at")
+          .eq("client_id", uid)
+          .order("taken_at", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(1),
+      ]);
+
+      if (!alive) return;
+
+      if (p.error) {
+        setFatalError(p.error.message);
+        setLoading(false);
+        return;
+      }
+
+      setBasic((p.data ?? null) as BasicProfile | null);
+      setExtended((cp.data ?? null) as ExtendedProfile | null);
+      setActiveAssignment((ma.data?.[0] ?? null) as MenuAssignment | null);
+      setFoodRules((fr.data?.[0] ?? null) as FoodRulesRow | null);
+      setSuppRow((sp.data?.[0] ?? null) as SupplementPlanRow | null);
+      setJournal((je.data ?? []) as JournalEntry[]);
+      setLastLab((lr.data?.[0] ?? null) as LabReport | null);
+      setLoading(false);
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const name = useMemo(() => basic?.full_name?.trim() || "".trim(), [basic]);
+
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayEntry = useMemo(() => journal.find((e) => e.entry_date === today) ?? null, [journal, today]);
+
+  const weightInfo = useMemo(() => {
+    const w = journal.filter((e) => typeof e.weight_kg === "number");
+    if (!w.length) return { last: null as number | null, delta: null as number | null };
+    const last = w[0].weight_kg as number;
+    const prev = w.find((x, idx) => idx > 0 && typeof x.weight_kg === "number")?.weight_kg ?? null;
+    const delta = prev == null ? null : Math.round((last - prev) * 10) / 10;
+    return { last, delta };
+  }, [journal]);
+
+  const avg7 = useMemo(() => {
+    const last7 = journal.slice(0, 7);
+    const energyVals = last7.map((e) => e.energy_level).filter((x): x is number => typeof x === "number");
+    const moodVals = last7.map((e) => e.mood).filter((x): x is number => typeof x === "number");
+    const avg = (arr: number[]) => (arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null);
+    return { energy: avg(energyVals), mood: avg(moodVals) };
+  }, [journal]);
+
+  const allowedTokens = useMemo(() => {
+    if (!foodRules) return [];
+    const allowed = (foodRules.allowed_products ?? foodRules.allowed) as unknown;
+    return splitList(allowed);
+  }, [foodRules]);
+
+  const bannedTokens = useMemo(() => {
+    if (!foodRules) return [];
+    const banned = (foodRules.banned_products ?? foodRules.banned) as unknown;
+    return splitList(banned);
+  }, [foodRules]);
+
+  const supplementPlan = useMemo(() => normalizeSupplementPlan(suppRow?.plan), [suppRow]);
+
+  if (loading) {
+    return <p className="text-sm text-zinc-500 dark:text-zinc-400">Загружаю…</p>;
+  }
+
+  if (fatalError) {
+    return <p className="text-sm text-red-500">{fatalError}</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <header className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tight">
+              {name ? `Привет, ${name}` : "Главная"}
+            </h2>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              Всё самое важное — в одном месте.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/client/assignments"
+              className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+            >
+              Мои назначения
+            </Link>
+            <Link
+              href="/client/journal"
+              className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+              Добавить запись
+            </Link>
+          </div>
+        </div>
+
+        {extended?.main_goal ? (
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="text-xs text-zinc-500 dark:text-zinc-400">Цель</div>
+            <div className="mt-1 font-semibold">{extended.main_goal}</div>
+            {extended.goal_description ? (
+              <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
+                {extended.goal_description}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </header>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card
+          title="Сегодня"
+          subtitle={todayEntry ? `Запись за ${formatDate(today)}` : "Записи за сегодня пока нет"}
+          action={
+            <Link
+              href="/client/journal"
+              className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+              Открыть
+            </Link>
+          }
+        >
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-zinc-600 dark:text-zinc-300">Дневник питания</div>
+              <div className="text-xs text-zinc-500">
+                {todayEntry && diaryRowCount(todayEntry.food_diary) > 0 ? "✓ заполнен" : "—"}
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-zinc-600 dark:text-zinc-300">Вода</div>
+              <div className="text-xs text-zinc-500">
+                {todayEntry?.water_balance ? "✓ есть" : "—"}
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-zinc-600 dark:text-zinc-300">Сон</div>
+              <div className="text-xs text-zinc-500">
+                {todayEntry?.bed_time || todayEntry?.wake_time ? "✓ есть" : "—"}
+              </div>
+            </div>
+
+            {todayEntry?.nutritionist_diary_note ? (
+              <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+                <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Заметка нутрициолога</div>
+                <div className="mt-1 whitespace-pre-wrap">{todayEntry.nutritionist_diary_note}</div>
+              </div>
+            ) : null}
+          </div>
+        </Card>
+
+        <Card
+          title="Состояние"
+          subtitle="Последние записи"
+          action={
+            <Link
+              href="/client/journal"
+              className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+              История
+            </Link>
+          }
+        >
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900">
+              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Вес</div>
+              <div className="mt-1 text-xl font-semibold">
+                {weightInfo.last == null ? "—" : `${weightInfo.last}`}
+                {weightInfo.delta == null ? null : (
+                  <span className="ml-2 text-xs font-medium text-zinc-500">
+                    {weightInfo.delta > 0 ? `+${weightInfo.delta}` : `${weightInfo.delta}`}
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 text-[11px] text-zinc-500">кг</div>
+            </div>
+
+            <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900">
+              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Энергия (7д)</div>
+              <div className="mt-1 text-xl font-semibold">{avg7.energy ?? "—"}</div>
+              <div className="mt-1 text-[11px] text-zinc-500">/ 10</div>
+            </div>
+
+            <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900">
+              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Настроение (7д)</div>
+              <div className="mt-1 text-xl font-semibold">{avg7.mood ?? "—"}</div>
+              <div className="mt-1 text-[11px] text-zinc-500">/ 10</div>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card
+          title="Активное назначение"
+          subtitle={activeAssignment ? "Ваш текущий план" : "Пока нет активного плана"}
+          action={
+            <Link
+              href="/client/assignments"
+              className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+              Открыть
+            </Link>
+          }
+        >
+          {!activeAssignment ? (
+            <p className="text-sm text-zinc-500">Попроси нутрициолога назначить рацион.</p>
+          ) : (
+            <div className="space-y-2">
+              <div className="text-base font-semibold">{activeAssignment.title}</div>
+              <div className="text-xs text-zinc-500">
+                {activeAssignment.start_date
+                  ? `с ${formatDate(activeAssignment.start_date)}`
+                  : `назначен ${formatDate(activeAssignment.created_at)}`}
+                {activeAssignment.end_date ? ` · до ${formatDate(activeAssignment.end_date)}` : ""}
+              </div>
+              {activeAssignment.notes ? (
+                <div className="rounded-xl bg-zinc-50 p-3 text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+                  {activeAssignment.notes}
+                </div>
+              ) : null}
+            </div>
+          )}
+        </Card>
+
+        <Card
+          title="Можно / Нельзя"
+          subtitle="Коротко по продуктам"
+          action={
+            <Link
+              href="/client/assignments"
+              className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+              Подробнее
+            </Link>
+          }
+        >
+          <div className="space-y-3">
+            <div>
+              <div className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">Можно</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {allowedTokens.length ? (
+                  allowedTokens.slice(0, 8).map((x) => <Pill key={`a-${x}`}>{x}</Pill>)
+                ) : (
+                  <span className="text-sm text-zinc-500">—</span>
+                )}
+                {allowedTokens.length > 8 ? (
+                  <span className="text-xs text-zinc-500">+{allowedTokens.length - 8}</span>
+                ) : null}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">Нельзя</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {bannedTokens.length ? (
+                  bannedTokens.slice(0, 8).map((x) => <Pill key={`b-${x}`}>{x}</Pill>)
+                ) : (
+                  <span className="text-sm text-zinc-500">—</span>
+                )}
+                {bannedTokens.length > 8 ? (
+                  <span className="text-xs text-zinc-500">+{bannedTokens.length - 8}</span>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card
+          title="БАДы и анализы"
+          subtitle="Короткий статус"
+          action={
+            <Link
+              href="/client/analyses"
+              className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+              Анализы
+            </Link>
+          }
+        >
+          <div className="space-y-3">
+            <div className="rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-900">
+              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">БАДы</div>
+              <div className="mt-1 font-semibold">
+                {supplementPlan.items?.length ? `${supplementPlan.items.length} назначено` : "Пока нет"}
+              </div>
+              {supplementPlan.items?.length ? (
+                <div className="mt-2 space-y-1 text-xs text-zinc-600 dark:text-zinc-300">
+                  {supplementPlan.items.slice(0, 2).map((it) => (
+                    <div key={it.name} className="flex justify-between gap-2">
+                      <span className="truncate">{it.name}</span>
+                      <span className="shrink-0 text-zinc-500">{it.dose || it.timing || ""}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-900">
+              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Последний анализ</div>
+              <div className="mt-1 font-semibold">{lastLab ? formatDate(lastLab.taken_at ?? lastLab.created_at) : "—"}</div>
+              {lastLab?.nutritionist_note ? (
+                <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-300 line-clamp-3">
+                  {lastLab.nutritionist_note}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/client/chat"
+                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+              >
+                Чат
+              </Link>
+              <Link
+                href="/client/settings"
+                className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              >
+                Настройки
+              </Link>
+            </div>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
 }

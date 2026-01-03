@@ -1,10 +1,22 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+
+type ChatThreadRow = {
+  id: string;
+  last_message_at: string | null;
+  last_message_sender_id: string | null;
+  nutritionist_last_read_at: string | null;
+};
+
+function asArray<T>(v: unknown): T[] {
+  return Array.isArray(v) ? (v as T[]) : [];
+}
+
 
 function MenuIcon({ className }: { className?: string }) {
   return (
@@ -47,10 +59,12 @@ function NavItem({
   href,
   label,
   onClick,
+  badgeCount,
 }: {
   href: string;
   label: string;
   onClick?: () => void;
+  badgeCount?: number;
 }) {
   const pathname = usePathname();
   const active = pathname === href || pathname.startsWith(`${href}/`);
@@ -61,23 +75,40 @@ function NavItem({
   const inactiveClasses =
     "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50";
 
+  const badge = badgeCount && badgeCount > 0 ? badgeCount : 0;
+
   return (
     <Link
       href={href}
       className={`${baseClasses} ${active ? activeClasses : inactiveClasses}`}
       onClick={onClick}
     >
-      {label}
+      <span className="flex items-center justify-between gap-3">
+        <span className="truncate">{label}</span>
+        {badge > 0 ? (
+          <span
+            className={`min-w-[22px] rounded-full px-2 py-0.5 text-center text-[11px] font-semibold ${
+              active ? "bg-white/20 text-white dark:bg-black/10 dark:text-black" : "bg-red-600 text-white"
+            }`}
+            aria-label="Есть новые сообщения"
+          >
+            {badge > 99 ? "99+" : badge}
+          </span>
+        ) : null}
+      </span>
     </Link>
   );
 }
 
+
 function SidebarContent({
   onNavigate,
   onSignOut,
+  unreadChatCount,
 }: {
   onNavigate?: () => void;
   onSignOut: () => void;
+  unreadChatCount?: number;
 }) {
   return (
     <div className="space-y-4">
@@ -94,7 +125,7 @@ function SidebarContent({
         <NavItem href="/nutritionist/profile" label="Мой профиль" onClick={onNavigate} />
         <NavItem href="/nutritionist/dishes" label="Мои блюда" onClick={onNavigate} />
         <NavItem href="/nutritionist/menus" label="Рационы" onClick={onNavigate} />
-        <NavItem href="/nutritionist/clients" label="Клиенты" onClick={onNavigate} />
+        <NavItem href="/nutritionist/clients" label="Клиенты" onClick={onNavigate} badgeCount={unreadChatCount} />
         <NavItem href="/nutritionist/training" label="Тренировки" onClick={onNavigate} />
         <NavItem
           href="/nutritionist/notifications"
@@ -129,10 +160,145 @@ export default function NutritionistLayout({
   const [checking, setChecking] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const [myId, setMyId] = useState<string | null>(null);
+  const [chatUnreadThreads, setChatUnreadThreads] = useState(0);
+
   useEffect(() => {
     // Закрываем мобильное меню при навигации
     setSidebarOpen(false);
   }, [pathname]);
+
+
+  const refreshChatUnread = useCallback(
+    async (uid: string) => {
+      try {
+        const res = await supabase
+          .from("chat_threads")
+          .select("id,last_message_at,last_message_sender_id,nutritionist_last_read_at")
+          .eq("nutritionist_id", uid);
+
+        if (res.error || !res.data) {
+          setChatUnreadThreads(0);
+          return;
+        }
+
+        const rows = asArray<ChatThreadRow>(res.data);
+        let unreadThreads = 0;
+
+        for (const row of rows) {
+          const lastAt = row?.last_message_at ? new Date(row.last_message_at).getTime() : 0;
+          const lastRead = row?.nutritionist_last_read_at ? new Date(row.nutritionist_last_read_at).getTime() : 0;
+          const lastSender = row?.last_message_sender_id as string | null;
+
+          const unread = Boolean(lastAt && lastSender && lastSender !== uid && lastAt > lastRead);
+          if (unread) unreadThreads += 1;
+        }
+
+        setChatUnreadThreads(unreadThreads);
+      } catch {
+        setChatUnreadThreads(0);
+      }
+    },
+    []
+  );
+
+  const markThreadRead = useCallback(async (threadId: string) => {
+    if (!threadId) return;
+    try {
+      await supabase
+        .from("chat_threads")
+        // у специалиста обновляем nutritionist_last_read_at
+        .update({ nutritionist_last_read_at: new Date().toISOString() })
+        .eq("id", threadId);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const activeChatClientId = useMemo(() => {
+    const prefix = "/nutritionist/chat/";
+    if (!pathname.startsWith(prefix)) return null;
+    const rest = pathname.slice(prefix.length);
+    const id = rest.split("/")[0];
+    return id || null;
+  }, [pathname]);
+
+  // когда открыт чат с конкретным клиентом — считаем прочитанным
+  useEffect(() => {
+    if (!myId || !activeChatClientId) return;
+
+    let alive = true;
+
+    (async () => {
+      try {
+        const th = await supabase
+          .from("chat_threads")
+          .select("id")
+          .eq("nutritionist_id", myId)
+          .eq("client_id", activeChatClientId)
+          .maybeSingle();
+
+        if (!alive) return;
+        const tid = (th.data as { id?: string } | null)?.id;
+        if (!tid) return;
+
+        const visible = typeof document !== "undefined" ? document.visibilityState === "visible" : true;
+        if (!visible) return;
+
+        await markThreadRead(tid);
+        await refreshChatUnread(myId);
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [myId, activeChatClientId, markThreadRead, refreshChatUnread]);
+
+  // realtime: обновление счётчика при новых сообщениях (через триггер обновляется chat_threads)
+  useEffect(() => {
+    if (!myId) return;
+
+    const channel = supabase
+      .channel(`chat_threads_badge:nutritionist:${myId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "chat_threads",
+          filter: `nutritionist_id=eq.${myId}`,
+        },
+        async (payload) => {
+          const row = (payload as { new?: unknown }).new as Partial<ChatThreadRow> | null;
+          const tid = row?.id as string | undefined;
+          const lastSender = row?.last_message_sender_id as string | undefined;
+
+          const chatOpen = Boolean(activeChatClientId);
+          const visible = typeof document !== "undefined" ? document.visibilityState === "visible" : true;
+
+          // если сейчас открыт чат и сообщение пришло от клиента — сразу помечаем прочитанным
+          if (chatOpen && visible && tid && lastSender && lastSender !== myId) {
+            await markThreadRead(tid);
+          }
+          await refreshChatUnread(myId);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [myId, activeChatClientId, markThreadRead, refreshChatUnread]);
+
+  // initial refresh
+  useEffect(() => {
+    if (!myId) return;
+    void refreshChatUnread(myId);
+  }, [myId, refreshChatUnread]);
+
 
   useEffect(() => {
     const check = async () => {
@@ -156,11 +322,11 @@ export default function NutritionistLayout({
         return;
       }
 
+      setMyId(user.id);
       setChecking(false);
     };
 
-    check();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void check();
   }, [router, pathname]);
 
   const signOut = async () => {
@@ -195,6 +361,15 @@ export default function NutritionistLayout({
               Управление рационом и клиентами
             </div>
           </div>
+
+          {chatUnreadThreads > 0 ? (
+            <div className="ml-auto flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-red-600" aria-label="Есть новые сообщения" />
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                {chatUnreadThreads > 99 ? "99+" : chatUnreadThreads}
+              </span>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -223,14 +398,14 @@ export default function NutritionistLayout({
               <CloseIcon className="h-5 w-5" />
             </button>
           </div>
-          <SidebarContent onNavigate={() => setSidebarOpen(false)} onSignOut={signOut} />
+          <SidebarContent onNavigate={() => setSidebarOpen(false)} onSignOut={signOut} unreadChatCount={chatUnreadThreads} />
         </aside>
       </div>
 
       <div className="mx-auto max-w-6xl px-4 pb-10 md:flex md:min-h-screen md:gap-6 md:px-8 md:py-8">
         {/* Desktop sidebar */}
         <aside className="hidden w-64 shrink-0 space-y-4 border-r border-zinc-200 pr-4 dark:border-zinc-800 md:block">
-          <SidebarContent onSignOut={signOut} />
+          <SidebarContent onSignOut={signOut} unreadChatCount={chatUnreadThreads} />
         </aside>
 
         <main className="min-w-0 flex-1 pt-4 md:pt-0">{children}</main>

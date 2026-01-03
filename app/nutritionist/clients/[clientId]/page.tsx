@@ -579,6 +579,10 @@ export default function ClientDetailPage() {
     const [showAssignForm, setShowAssignForm] = useState(false);
     const [showAllAssignments, setShowAllAssignments] = useState(false);
 
+    // UI: вкладки на странице клиента (эргономика)
+    type ClientTab = "overview" | "plan" | "diary" | "labs" | "training";
+    const [tab, setTab] = useState<ClientTab>("overview");
+
     // Анализы (только просмотр)
     const [labReports, setLabReports] = useState<LabReport[]>([]);
     const [labHint, setLabHint] = useState<string | null>(null);
@@ -1624,7 +1628,35 @@ export default function ClientDetailPage() {
         setSuppItems((prev) => [...prev, emptySupplementItem()]);
     }, []);
 
-    if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">Загружаю данные клиента...</p>;
+    
+    // Количество отметок тренировок в дневнике (для бейджа вкладки)
+    const trainingBadge = (journal ?? []).filter((e: any) => e?.training_report != null).length;
+
+    const TabBtn = ({ id, label, badge }: { id: ClientTab; label: string; badge?: number }) => (
+        <button
+            type="button"
+            onClick={() => setTab(id)}
+            className={
+                tab === id
+                    ? "inline-flex items-center gap-2 rounded-xl bg-black px-3 py-2 text-xs font-medium text-white dark:bg-zinc-100 dark:text-black"
+                    : "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            }
+        >
+            <span className="whitespace-nowrap">{label}</span>
+            {typeof badge === "number" && badge > 0 ? (
+                <span
+                    className={
+                        tab === id
+                            ? "rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold text-white dark:bg-black/15 dark:text-black"
+                            : "rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
+                    }
+                >
+                    {badge}
+                </span>
+            ) : null}
+        </button>
+    );
+if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">Загружаю данные клиента...</p>;
     if (fatalError) return <p className="text-sm text-red-500">{fatalError}</p>;
     if (!basic) return <p className="text-sm text-red-500">Клиент не найден или нет доступа.</p>;
 
@@ -1639,21 +1671,73 @@ export default function ClientDetailPage() {
     const intakeEntries = listIntakeEntries(intake);
 
     return (
-        <div className="space-y-6">
-            <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                <div className="space-y-1">
-                    <h2 className="text-2xl font-semibold tracking-tight">Клиент: {basic.full_name ?? basic.id}</h2>
-                    <p className="text-sm text-zinc-600 dark:text-zinc-400">Цель → активный рацион → можно/нельзя → прогресс → дневник → анализы.</p>
+        <div className="mx-auto max-w-6xl space-y-6">
+            <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                            href="/nutritionist/clients"
+                            className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                        >
+                            ← Клиенты
+                        </Link>
+
+                        <h2 className="min-w-0 truncate text-2xl font-semibold tracking-tight">
+                            {basic.full_name ?? basic.id}
+                        </h2>
+
+                        <span
+                            className={
+                                activeAssignment
+                                    ? "rounded-full bg-black px-3 py-1 text-[11px] font-medium text-white dark:bg-zinc-100 dark:text-black"
+                                    : "rounded-full border border-zinc-300 bg-white px-3 py-1 text-[11px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300"
+                            }
+                        >
+                            {activeAssignment ? "активный рацион" : "нет назначений"}
+                        </span>
+                    </div>
+
+                    <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                        Обзор → план → дневник → тренировки → анализы.
+                    </p>
                 </div>
-                <Link
-                    href={`/nutritionist/chat/${basic.id}`}
-                    className="inline-flex items-center justify-center rounded-full bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
-                >
-                    Чат
-                </Link>
+
+                <div className="flex flex-wrap items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setTab("plan");
+                            setShowAssignForm(true);
+                        }}
+                        className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                    >
+                        Назначить
+                    </button>
+
+                    <Link
+                        href={`/nutritionist/chat/${basic.id}`}
+                        className="inline-flex items-center justify-center rounded-full bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                    >
+                        Чат
+                    </Link>
+                </div>
             </header>
 
-            {/* РЕЗЮМЕ */}
+            <div className="sticky top-2 z-20 -mx-2 px-2">
+                <div className="rounded-2xl border border-zinc-200 bg-white/80 p-1 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/70">
+                    <nav className="flex gap-1 overflow-x-auto">
+                        <TabBtn id="overview" label="Обзор" />
+                        <TabBtn id="plan" label="План" badge={menuAssignments.length || undefined} />
+                        <TabBtn id="diary" label="Дневник" badge={filteredJournal.length || undefined} />
+                        <TabBtn id="training" label="Тренировки" badge={trainingBadge || undefined} />
+                        <TabBtn id="labs" label="Анализы" badge={labReports.length || undefined} />
+                    </nav>
+                </div>
+            </div>
+
+            {tab === "overview" ? (
+                <>
+                    {/* РЕЗЮМЕ */}
             <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="space-y-1">
@@ -1712,7 +1796,101 @@ export default function ClientDetailPage() {
                 ) : null}
             </section>
 
-            {/* Анкета клиента (из профиля) */}
+{/* ДАШБОРД */}
+<section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold">Дашборд (последние {journalRange === "all" ? "все" : journalRange} дней)</h3>
+        <button
+            type="button"
+            onClick={() => setTab("diary")}
+            className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+        >
+            Открыть дневник →
+        </button>
+    </div>
+
+    <div className="grid gap-3 sm:grid-cols-4">
+        <div className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
+            <div className="text-zinc-500">Записей</div>
+            <div className="mt-1 text-sm font-semibold">{progress.entriesCount}</div>
+        </div>
+
+        <div className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
+            <div className="text-zinc-500">Вес</div>
+            <div className="mt-1 flex items-baseline gap-2">
+                <div className="text-sm font-semibold">
+                    {progress.lastWeight != null ? `${Math.round(progress.lastWeight * 10) / 10} кг` : "—"}
+                </div>
+                {progress.deltaWeight != null ? (
+                    <div className={"text-[11px] font-medium " + (progress.deltaWeight > 0 ? "text-red-600" : progress.deltaWeight < 0 ? "text-emerald-600" : "text-zinc-500")}>
+                        {progress.deltaWeight > 0 ? "+" : ""}
+                        {Math.round(progress.deltaWeight * 10) / 10}
+                    </div>
+                ) : null}
+            </div>
+        </div>
+
+        <div className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
+            <div className="text-zinc-500">Энергия (сред.)</div>
+            <div className="mt-1 text-sm font-semibold">{progress.avgEnergy ?? "—"}</div>
+        </div>
+
+        <div className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
+            <div className="text-zinc-500">Настроение (сред.)</div>
+            <div className="mt-1 text-sm font-semibold">{progress.avgMood ?? "—"}</div>
+        </div>
+    </div>
+
+    {weightPath ? (
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="mb-2 flex items-center justify-between text-xs text-zinc-500">
+                <span>Вес (мини-график)</span>
+                <span>
+                    {Math.round(weightPath.minW * 10) / 10} — {Math.round(weightPath.maxW * 10) / 10} кг
+                </span>
+            </div>
+            <svg width="100%" height="64" viewBox="0 0 260 64" preserveAspectRatio="none" className="block">
+                <path d={weightPath.d} fill="none" stroke="currentColor" strokeWidth="2" className="text-zinc-500" />
+            </svg>
+        </div>
+    ) : null}
+
+    <div className="grid gap-3 lg:grid-cols-3">
+        <div className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
+            <div className="text-zinc-500">Последняя запись</div>
+            <div className="mt-1 text-sm font-semibold">
+                {filteredJournal[0]?.entry_date ? formatDate(filteredJournal[0].entry_date) : "—"}
+            </div>
+            <div className="mt-1 text-[11px] text-zinc-500">
+                {filteredJournal[0]?.sleep_note ? "Есть заметка про сон" : "Без заметки"}
+                {" · "}
+                {filteredJournal[0]?.water_balance ? "Вода заполнена" : "Вода не заполнена"}
+            </div>
+        </div>
+
+        <div className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
+            <div className="text-zinc-500">Анализы</div>
+            <div className="mt-1 text-sm font-semibold">{labReports.length ? `${labReports.length} шт.` : "—"}</div>
+            <div className="mt-1 text-[11px] text-zinc-500">
+                {labReports[0]?.created_at ? `Последний: ${formatDate(labReports[0].created_at)}` : "Последнего нет"}
+            </div>
+        </div>
+
+        <div className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
+            <div className="text-zinc-500">План</div>
+            <div className="mt-1 text-sm font-semibold">{activeAssignment ? "Активный назначен" : "Нет назначения"}</div>
+            <button
+                type="button"
+                onClick={() => setTab("plan")}
+                className="mt-2 rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+                Открыть план →
+            </button>
+        </div>
+    </div>
+</section>
+
+                    {/* Анкета клиента (из профиля) */}
             <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
                 <div>
                     <h3 className="text-sm font-semibold">Анкета клиента</h3>
@@ -1774,12 +1952,17 @@ export default function ClientDetailPage() {
                 )}
             </section>
 
-            {/* Назначение рациона + Можно/Нельзя */}
+                </>
+            ) : null}
+
+            {tab === "plan" ? (
+                <>
+                    {/* Назначение рациона + Можно/Нельзя */}
             <section className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
                 <div className="flex items-start justify-between gap-3">
                     <div>
                         <h3 className="text-sm font-semibold">Назначение рациона по цели</h3>
-                        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Слева — цель и рацион, справа — продукты «можно/нельзя» (видит клиент).</p>
+                        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">3 блока: Назначения → Можно/нельзя → БАДы. Всё, что видит клиент, здесь.</p>
                     </div>
 
                     <button
@@ -2324,7 +2507,12 @@ export default function ClientDetailPage() {
 
             </section>
 
-            {/* Дневник */}
+                </>
+            ) : null}
+
+            {tab === "diary" ? (
+                <>
+                    {/* Дневник */}
             <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <h3 className="text-sm font-semibold">Дневник клиента (вес / энергия / настроение)</h3>
@@ -2657,7 +2845,12 @@ export default function ClientDetailPage() {
             </section>
 
 
-            {/* Тренировки (информативно) */}
+                </>
+            ) : null}
+
+            {tab === "training" ? (
+                <>
+                    {/* Тренировки (информативно) */}
             <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
                 <div className="flex items-start justify-between gap-3">
                     <div>
@@ -2720,7 +2913,12 @@ export default function ClientDetailPage() {
             </section>
 
 
-{/* Анализы */}
+                </>
+            ) : null}
+
+            {tab === "labs" ? (
+                <>
+                    {/* Анализы */}
             <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
                 <div className="flex items-start justify-between gap-3">
                     <div>
@@ -2992,6 +3190,8 @@ export default function ClientDetailPage() {
                     </div>
                 )}
             </section>
+                </>
+            ) : null}
         </div>
     );
 }
