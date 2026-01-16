@@ -436,8 +436,64 @@ export default function ClientTrainingPage() {
               </div>
 
               {plan?.exercises?.length ? (
-                <div className="mt-3 max-w-full overflow-x-auto">
-                  <table className="w-full min-w-[760px] border-separate border-spacing-0 text-xs">
+                <>
+                  <div className="mt-3 md:hidden space-y-3">
+                    {plan.exercises.map((ex) => {
+                      const embed = (ex.video_url || "").trim() ? toEmbedUrl(ex.video_url) : null;
+                      return (
+                        <div
+                          key={ex.id}
+                          className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold">{ex.name || "—"}</div>
+                              <div className="mt-1 text-[11px] text-zinc-500">
+                                {ex.sets || "—"} подход · {ex.reps || "—"} повт
+                                {ex.weight ? ` · ${ex.weight}` : ""}
+                                {ex.rounds ? ` · круги: ${ex.rounds}` : ""}
+                              </div>
+                            </div>
+                          </div>
+
+                          {ex.notes ? (
+                            <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">{ex.notes}</div>
+                          ) : null}
+
+                          {(ex.video_url || "").trim() ? (
+                            <details className="mt-2">
+                              <summary className="cursor-pointer select-none text-xs text-zinc-700 dark:text-zinc-200">
+                                Видео
+                              </summary>
+                              <div className="mt-2">
+                                {embed ? (
+                                  <iframe
+                                    className="h-48 w-full rounded-lg border border-zinc-200 dark:border-zinc-800"
+                                    src={embed}
+                                    title={ex.name}
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                    allowFullScreen
+                                  />
+                                ) : (
+                                  <a
+                                    href={ex.video_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex rounded-full border border-zinc-300 px-3 py-1 text-[11px] text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                                  >
+                                    Открыть ссылку
+                                  </a>
+                                )}
+                              </div>
+                            </details>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-3 hidden md:block max-w-full overflow-x-auto">
+                                      <table className="w-full min-w-[760px] border-separate border-spacing-0 text-xs">
                     <thead>
                       <tr className="text-left text-[11px] text-zinc-500">
                         <th className="py-2 pr-3">Упражнение</th>
@@ -493,11 +549,12 @@ export default function ClientTrainingPage() {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                  </div>
+                </>
               ) : (
                 <div className="mt-3 text-xs text-zinc-500">Упражнения не заданы.</div>
               )}
-            </section>
+</section>
 
             {/* Report */}
             <section className="rounded-xl border border-zinc-200 bg-white p-4 text-xs dark:border-zinc-800 dark:bg-zinc-950">
@@ -562,7 +619,140 @@ export default function ClientTrainingPage() {
                     />
                   </label>
 
-                  <div className="mt-3 max-w-full overflow-x-auto">
+                  <div className="mt-3 md:hidden space-y-3">
+                      {plan.exercises.map((pex) => {
+                        const idx = report.exercises.findIndex((x) => x.id === pex.id);
+                        const ex = idx >= 0 ? report.exercises[idx] : null;
+                        if (!ex) return null;
+
+                        const patch = (next: Partial<TrainingExerciseReport>) => {
+                          const nextArr = report.exercises.slice();
+                          nextArr[idx] = { ...nextArr[idx], ...next };
+                          setReport({ ...report, exercises: nextArr });
+                        };
+
+                        const fillFromPlan = () => {
+                          patch({
+                            actual_sets: pex.sets ?? "",
+                            actual_reps: pex.reps ?? "",
+                            actual_weight: pex.weight ?? "",
+                            actual_rounds: pex.rounds ?? "",
+                          });
+                        };
+
+                        const showComment = !ex.done || (ex.comment || "").trim() !== "";
+
+                        return (
+                          <div
+                            key={pex.id}
+                            className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold">{pex.name}</div>
+                                <div className="mt-1 text-[11px] text-zinc-500">
+                                  План: {pex.sets || "—"}×{pex.reps || "—"}
+                                  {pex.weight ? ` · ${pex.weight}` : ""}
+                                  {pex.rounds ? ` · круги: ${pex.rounds}` : ""}
+                                </div>
+                              </div>
+
+                              <div className="shrink-0 inline-flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700">
+                                <button
+                                  type="button"
+                                  onClick={() => patch({ done: true })}
+                                  className={`px-3 py-1 text-xs ${ex.done ? "bg-black text-white dark:bg-zinc-100 dark:text-black" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
+                                  aria-label="Сделал"
+                                >
+                                  ✓
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => patch({ done: false })}
+                                  className={`px-3 py-1 text-xs ${!ex.done ? "bg-black text-white dark:bg-zinc-100 dark:text-black" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
+                                  aria-label="Не сделал"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={fillFromPlan}
+                                className="rounded-full border border-zinc-300 px-3 py-1 text-[11px] text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                              >
+                                Как в плане
+                              </button>
+                              <span className="text-[11px] text-zinc-500">Факт (можно менять)</span>
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                              <label className="flex flex-col gap-1 text-[11px] text-zinc-500">
+                                Подходы
+                                <input
+                                  value={ex.actual_sets}
+                                  onChange={(e) => patch({ actual_sets: e.target.value })}
+                                  className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-950"
+                                  placeholder="напр. 3"
+                                />
+                              </label>
+                              <label className="flex flex-col gap-1 text-[11px] text-zinc-500">
+                                Повторы
+                                <input
+                                  value={ex.actual_reps}
+                                  onChange={(e) => patch({ actual_reps: e.target.value })}
+                                  className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-950"
+                                  placeholder="напр. 10"
+                                />
+                              </label>
+                              <label className="flex flex-col gap-1 text-[11px] text-zinc-500">
+                                Вес
+                                <input
+                                  value={ex.actual_weight}
+                                  onChange={(e) => patch({ actual_weight: e.target.value })}
+                                  className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-950"
+                                  placeholder="напр. 40кг"
+                                />
+                              </label>
+                              <label className="flex flex-col gap-1 text-[11px] text-zinc-500">
+                                Круги
+                                <input
+                                  value={ex.actual_rounds}
+                                  onChange={(e) => patch({ actual_rounds: e.target.value })}
+                                  className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-950"
+                                  placeholder="если круги"
+                                />
+                              </label>
+                            </div>
+
+                            {showComment ? (
+                              <label className="mt-3 flex flex-col gap-1 text-[11px] text-zinc-500">
+                                Комментарий{ex.done ? "" : " (почему не получилось)"}
+                                <textarea
+                                  rows={2}
+                                  value={ex.comment}
+                                  onChange={(e) => patch({ comment: e.target.value })}
+                                  className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-950"
+                                  placeholder="ощущения, изменения, боль и т.п."
+                                />
+                              </label>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => patch({ comment: "" })}
+                                className="mt-3 rounded-full border border-zinc-300 px-3 py-1 text-[11px] text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                              >
+                                Добавить комментарий
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-3 hidden md:block max-w-full overflow-x-auto">
                     <table className="w-full min-w-[900px] border-separate border-spacing-0 text-xs">
                       <thead>
                         <tr className="text-left text-[11px] text-zinc-500">
@@ -591,7 +781,24 @@ export default function ClientTrainingPage() {
                             <tr key={pex.id} className="border-t border-zinc-200 dark:border-zinc-800">
                               <td className="py-2 pr-3 align-top font-medium">{pex.name}</td>
                               <td className="py-2 pr-3 align-top">
-                                <input type="checkbox" checked={ex.done} onChange={(e) => patch({ done: e.target.checked })} />
+                                <div className="inline-flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700">
+                                  <button
+                                    type="button"
+                                    onClick={() => patch({ done: true })}
+                                    className={`px-2 py-1 text-xs ${ex.done ? "bg-emerald-600 text-white" : "bg-transparent text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"}`}
+                                    title="Сделал"
+                                  >
+                                    ✓
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => patch({ done: false })}
+                                    className={`px-2 py-1 text-xs ${!ex.done ? "bg-red-600 text-white" : "bg-transparent text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"}`}
+                                    title="Не сделал"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
                               </td>
                               <td className="py-2 pr-3 align-top">
                                 <input
@@ -638,24 +845,27 @@ export default function ClientTrainingPage() {
                         })}
                       </tbody>
                     </table>
-                  </div>
-                </>
+                  
+                    </div>
+                  </>
               )}
             </section>
 
             {error ? <p className="text-xs text-red-500">{error}</p> : null}
             {hint ? <p className="text-xs text-emerald-600">{hint}</p> : null}
 
-            <button
-              type="submit"
-              disabled={saving || !plan}
-              className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
-            >
-              {saving ? "Сохраняю..." : "Сохранить отметку"}
-            </button>
+            <div className="sticky bottom-0 -mx-5 mt-4 border-t border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+              <button
+                type="submit"
+                disabled={saving || !plan}
+                className="w-full rounded-xl bg-black px-4 py-3 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200 md:w-auto md:rounded-full md:py-2"
+              >
+                {saving ? "Сохраняю..." : "Сохранить отметку"}
+              </button>
 
-            <div className="mt-2 text-[11px] text-zinc-500">
-              Если вы не видите план — попросите специалиста назначить тренировку на эту дату.
+              <div className="mt-2 text-[11px] text-zinc-500">
+                Если вы не видите план — попросите специалиста назначить тренировку на эту дату.
+              </div>
             </div>
           </div>
         </form>
