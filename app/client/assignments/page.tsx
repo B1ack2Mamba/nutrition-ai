@@ -769,7 +769,7 @@ export default function ClientPage() {
                                     </div>
                                 ) : null}
                             </div>
-                            <span className="rounded-full bg-black px-2 py-0.5 text-[10px] font-medium text-white">
+                            <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-medium text-white">
                                 активный
                             </span>
                         </div>

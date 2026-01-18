@@ -34,7 +34,7 @@ export const metadata: Metadata = {
 
 // Next.js (App Router): themeColor должен быть в viewport export
 export const viewport: Viewport = {
-  themeColor: "#ffffff",
+  themeColor: "#1f7a3a",
 };
 
 export default function RootLayout({

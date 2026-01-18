@@ -467,7 +467,7 @@ export default function NewDishPage() {
                 type="button"
                 onClick={handleAiAutofill}
                 disabled={aiBusy}
-                className="rounded-full bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
                 title="ИИ заполнит ингредиенты/граммовки/инструкцию по названию блюда"
               >
                 {aiBusy ? "Заполняю..." : "Автозаполнить блюдо с ИИ"}
@@ -563,7 +563,7 @@ export default function NewDishPage() {
           <button
             type="submit"
             disabled={saving}
-            className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+            className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
           >
             {saving ? "Сохраняю..." : "Сохранить блюдо"}
           </button>

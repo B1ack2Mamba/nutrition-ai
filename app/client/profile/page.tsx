@@ -548,7 +548,7 @@ export default function ClientProfilePage() {
                 <button
                     type="submit"
                     disabled={savingProfile}
-                    className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                    className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
                 >
                     {savingProfile ? "Сохраняю..." : "Сохранить профиль"}
                 </button>
@@ -1117,7 +1117,7 @@ export default function ClientProfilePage() {
                                 type="button"
                                 onClick={handleSaveIntake}
                                 disabled={savingIntake}
-                                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                                className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
                             >
                                 {savingIntake ? "Сохраняю..." : "Сохранить анкету"}
                             </button>
@@ -1204,7 +1204,7 @@ export default function ClientProfilePage() {
                                     type="button"
                                     onClick={handleUploadLab}
                                     disabled={labUploading || !labFile}
-                                    className="rounded-full bg-black px-4 py-2 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                                    className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
                                 >
                                     {labUploading ? "Загружаю..." : "Загрузить"}
                                 </button>
@@ -1255,7 +1255,7 @@ export default function ClientProfilePage() {
                                                         type="button"
                                                         onClick={() => saveClientLabNote(r)}
                                                         disabled={labClientNoteSavingId === r.id}
-                                                        className="rounded-full bg-black px-3 py-1.5 text-[11px] text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-black"
+                                                        className="rounded-full bg-emerald-600 px-3 py-1.5 text-[11px] text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-black"
                                                     >
                                                         {labClientNoteSavingId === r.id ? "Сохраняю…" : "Сохранить"}
                                                     </button>
@@ -1354,7 +1354,7 @@ export default function ClientProfilePage() {
                                     type="button"
                                     onClick={handleSendRequest}
                                     disabled={sendingRequest || !selectedNutritionistId}
-                                    className="self-start rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                                    className="self-start rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
                                 >
                                     {sendingRequest ? "Отправляю..." : "Отправить заявку нутрициологу"}
                                 </button>

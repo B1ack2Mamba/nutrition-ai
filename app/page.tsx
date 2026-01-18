@@ -4,7 +4,7 @@ import Link from "next/link";
 
 export default function HomePage() {
     return (
-        <main className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black px-6">
+        <main className="flex min-h-screen items-center justify-center bg-[color:var(--background)] dark:bg-black px-6">
             <div className="w-full max-w-md space-y-8 text-center">
                 <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
                     Nutrition AI

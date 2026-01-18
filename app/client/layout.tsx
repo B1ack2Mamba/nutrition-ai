@@ -68,8 +68,8 @@ function ClientNavLink({
       onClick={onClick}
       className={`w-full rounded-full px-4 py-2 text-left text-sm transition ${
         active
-          ? "bg-black text-white dark:bg-zinc-100 dark:text-black"
-          : "text-zinc-800 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          ? "bg-emerald-200 text-slate-900 shadow-sm"
+          : "text-slate-700 hover:bg-white/70 hover:text-slate-900"
       }`}
     >
       <span className="flex items-center justify-between gap-3">
@@ -78,7 +78,7 @@ function ClientNavLink({
           <span
             className={`min-w-[22px] rounded-full px-2 py-0.5 text-center text-[11px] font-semibold ${
               active
-                ? "bg-white/20 text-white dark:bg-black/10 dark:text-black"
+                ? "bg-slate-900/10 text-slate-900"
                 : "bg-red-600 text-white"
             }`}
           >
@@ -104,7 +104,7 @@ function SidebarContent({
   return (
     <div>
       <h1 className="text-2xl font-semibold tracking-tight">Мой кабинет</h1>
-      <p className="mt-1 text-xs text-zinc-500">Главная · Назначения · Дневник · Специалисты</p>
+      <p className="mt-1 text-xs text-slate-500">Главная · Назначения · Дневник · Специалисты</p>
 
       <nav className="mt-6 flex flex-col gap-2">
         {navItems.map((item) => (
@@ -121,7 +121,7 @@ function SidebarContent({
       <button
         type="button"
         onClick={onSignOut}
-        className="mt-6 rounded-full border border-zinc-300 px-4 py-2 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        className="mt-6 rounded-full border border-[color:var(--border)] bg-white/70 px-4 py-2 text-sm text-slate-800 shadow-sm hover:bg-white"
       >
         Выйти
       </button>
@@ -354,28 +354,28 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
 
   if (checking) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 text-sm text-zinc-500 dark:bg-black dark:text-zinc-400">
+      <div className="flex min-h-screen items-center justify-center bg-[#f7f1e7] text-sm text-slate-600">
         Проверяю доступ в клиентский кабинет...
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
+    <div className="min-h-screen bg-[#f7f1e7] text-slate-900">
       {/* Mobile top bar */}
-      <div className="sticky top-0 z-40 border-b border-zinc-200 bg-zinc-50/90 backdrop-blur dark:border-zinc-800 dark:bg-black/80 md:hidden">
+      <div className="sticky top-0 z-40 border-b border-[color:var(--border)] bg-[#f7f1e7]/90 backdrop-blur md:hidden">
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--border)] bg-white/70 text-slate-700 shadow-sm hover:bg-white"
             aria-label="Открыть меню"
           >
             <MenuIcon className="h-5 w-5" />
           </button>
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold">Мой кабинет</div>
-            <div className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+            <div className="truncate text-[11px] text-slate-500">
               Главная • Назначения • Дневник • Специалисты
             </div>
           </div>
@@ -383,7 +383,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
           {chatUnread ? (
             <div className="ml-auto flex items-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full bg-red-600" aria-label="Есть новые сообщения" />
-              <span className="text-[11px] text-zinc-500 dark:text-zinc-400">новые сообщения</span>
+              <span className="text-[11px] text-slate-500">новые сообщения</span>
             </div>
           ) : null}
         </div>
@@ -396,7 +396,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
           onClick={() => setSidebarOpen(false)}
         />
         <aside
-          className={`absolute inset-y-0 left-0 w-72 max-w-[85vw] overflow-y-auto border-r border-zinc-200 bg-zinc-50 p-4 pt-3 shadow-xl transition-transform dark:border-zinc-800 dark:bg-black ${
+          className={`absolute inset-y-0 left-0 w-72 max-w-[85vw] overflow-y-auto border-r border-[color:var(--border)] bg-[#f7f1e7] p-4 pt-3 shadow-xl transition-transform ${
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
@@ -405,7 +405,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => setSidebarOpen(false)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--border)] bg-white/70 text-slate-700 shadow-sm hover:bg-white"
               aria-label="Закрыть меню"
             >
               <CloseIcon className="h-5 w-5" />
@@ -415,10 +415,12 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
         </aside>
       </div>
 
-      <main className="mx-auto max-w-5xl px-4 pb-10 md:flex md:min-h-screen md:gap-8 md:px-4 md:py-8">
+      <main className="mx-auto max-w-5xl px-4 pb-10 md:flex md:min-h-screen md:gap-8 md:px-4 md:py-10">
         {/* Desktop sidebar */}
-        <aside className="hidden w-64 border-r border-zinc-200 pr-6 dark:border-zinc-800 md:block">
-          <SidebarContent navItems={navItems} onSignOut={handleLogout} />
+        <aside className="hidden w-72 shrink-0 md:block">
+          <div className="sticky top-10 rounded-3xl border border-[color:var(--border)] bg-white/70 p-5 shadow-sm backdrop-blur">
+            <SidebarContent navItems={navItems} onSignOut={handleLogout} />
+          </div>
         </aside>
 
         {/* Основной контент */}

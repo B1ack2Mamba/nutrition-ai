@@ -599,7 +599,7 @@ export default function NutritionistTrainingClientPage() {
                   if (j) setEntries(j as Entry[]);
                   setSaving(false);
                 }}
-                className="rounded-full bg-black px-4 py-2 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
               >
                 {saving ? "Сохраняю..." : "Сохранить план"}
               </button>

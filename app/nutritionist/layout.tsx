@@ -69,11 +69,9 @@ function NavItem({
   const pathname = usePathname();
   const active = pathname === href || pathname.startsWith(`${href}/`);
 
-  const baseClasses = "rounded-lg px-3 py-2 text-sm font-medium transition";
-  const activeClasses =
-    "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900";
-  const inactiveClasses =
-    "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50";
+  const baseClasses = "rounded-xl px-3 py-2 text-sm font-medium transition";
+  const activeClasses = "bg-emerald-200 text-slate-900 shadow-sm";
+  const inactiveClasses = "text-slate-700 hover:bg-white/70 hover:text-slate-900";
 
   const badge = badgeCount && badgeCount > 0 ? badgeCount : 0;
 
@@ -88,7 +86,7 @@ function NavItem({
         {badge > 0 ? (
           <span
             className={`min-w-[22px] rounded-full px-2 py-0.5 text-center text-[11px] font-semibold ${
-              active ? "bg-white/20 text-white dark:bg-black/10 dark:text-black" : "bg-red-600 text-white"
+              active ? "bg-white/20 text-white" : "bg-red-600 text-white"
             }`}
             aria-label="Есть новые сообщения"
           >
@@ -116,7 +114,7 @@ function SidebarContent({
         <h1 className="text-xl font-semibold tracking-tight">
           Кабинет нутрициолога
         </h1>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-xs text-slate-500">
           Управление базой блюд, рационов и клиентов
         </p>
       </div>
@@ -134,7 +132,7 @@ function SidebarContent({
         />
       </nav>
 
-      <p className="mt-4 text-[11px] text-zinc-500 dark:text-zinc-500">
+      <p className="mt-4 text-[11px] text-slate-500">
         Клиентский режим доступен в разделе{" "}
         <span className="font-medium">/client</span>.
       </p>
@@ -142,7 +140,7 @@ function SidebarContent({
       <button
         type="button"
         onClick={onSignOut}
-        className="mt-4 rounded-full border border-zinc-300 px-3 py-1.5 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+        className="mt-4 rounded-full border border-[color:var(--border)] bg-white/70 px-3 py-1.5 text-xs text-slate-700 shadow-sm hover:bg-white"
       >
         Выйти
       </button>
@@ -336,28 +334,28 @@ export default function NutritionistLayout({
 
   if (checking) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 text-sm text-zinc-500 dark:bg-black dark:text-zinc-400">
+      <div className="flex min-h-screen items-center justify-center bg-[color:var(--background)] text-sm text-slate-600">
         Проверяю доступ к кабинету нутрициолога...
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
+    <div className="min-h-screen bg-[color:var(--background)] text-slate-900">
       {/* Mobile top bar */}
-      <div className="sticky top-0 z-40 border-b border-zinc-200 bg-zinc-50/90 backdrop-blur dark:border-zinc-800 dark:bg-black/80 md:hidden">
+      <div className="sticky top-0 z-40 border-b border-[color:var(--border)] bg-[color:var(--background)] backdrop-blur md:hidden">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--border)] bg-white/70 text-slate-700 shadow-sm hover:bg-white"
             aria-label="Открыть меню"
           >
             <MenuIcon className="h-5 w-5" />
           </button>
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold">Кабинет нутрициолога</div>
-            <div className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+            <div className="truncate text-[11px] text-slate-500">
               Управление рационом и клиентами
             </div>
           </div>
@@ -365,7 +363,7 @@ export default function NutritionistLayout({
           {chatUnreadThreads > 0 ? (
             <div className="ml-auto flex items-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full bg-red-600" aria-label="Есть новые сообщения" />
-              <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+              <span className="text-[11px] text-slate-500">
                 {chatUnreadThreads > 99 ? "99+" : chatUnreadThreads}
               </span>
             </div>
@@ -383,7 +381,7 @@ export default function NutritionistLayout({
           onClick={() => setSidebarOpen(false)}
         />
         <aside
-          className={`absolute inset-y-0 left-0 w-72 max-w-[85vw] overflow-y-auto border-r border-zinc-200 bg-zinc-50 p-4 pt-3 shadow-xl transition-transform dark:border-zinc-800 dark:bg-black ${
+          className={`absolute inset-y-0 left-0 w-72 max-w-[85vw] overflow-y-auto border-r border-[color:var(--border)] bg-[color:var(--background)] p-4 pt-3 shadow-xl transition-transform ${
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
@@ -392,7 +390,7 @@ export default function NutritionistLayout({
             <button
               type="button"
               onClick={() => setSidebarOpen(false)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--border)] bg-white/70 text-slate-700 shadow-sm hover:bg-white"
               aria-label="Закрыть меню"
             >
               <CloseIcon className="h-5 w-5" />
@@ -402,10 +400,12 @@ export default function NutritionistLayout({
         </aside>
       </div>
 
-      <div className="mx-auto max-w-6xl px-4 pb-10 md:flex md:min-h-screen md:gap-6 md:px-8 md:py-8">
+      <div className="mx-auto max-w-6xl px-4 pb-10 md:flex md:min-h-screen md:gap-6 md:px-8 md:py-10">
         {/* Desktop sidebar */}
-        <aside className="hidden w-64 shrink-0 space-y-4 border-r border-zinc-200 pr-4 dark:border-zinc-800 md:block">
-          <SidebarContent onSignOut={signOut} unreadChatCount={chatUnreadThreads} />
+        <aside className="hidden w-72 shrink-0 md:block">
+          <div className="sticky top-8 rounded-3xl border border-[color:var(--border)] bg-white/70 p-5 shadow-sm backdrop-blur">
+            <SidebarContent onSignOut={signOut} unreadChatCount={chatUnreadThreads} />
+          </div>
         </aside>
 
         <main className="min-w-0 flex-1 pt-4 md:pt-0">{children}</main>

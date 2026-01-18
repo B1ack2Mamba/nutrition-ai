@@ -1,8 +1,28 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Theme */
+  --background: #f7f1e7; /* soft beige */
+  --foreground: #1f2937; /* slate-800 */
+
+  --card: rgba(255, 255, 255, 0.78);
+  --card-solid: #ffffff;
+  --border: #e6d9c7;
+  --muted: #6b7280;
+
+  /* Brand / accent */
+  --accent: #a7f3d0; /* light green */
+  --accent-hover: #6ee7b7; /* hover */
+  --accent-ink: #0f172a; /* near-black text on accent */
+
+  --accent-link: #166534; /* deep green for links */
+  --accent-link-hover: #14532d;
+  --accent-soft: #e9f6ee;
+  --accent-soft-ink: #0f172a;
+  --accent-600: #166534;
+
+  /* Make sure the app stays light even if OS is dark */
+  color-scheme: light;
 }
 
 @theme inline {
@@ -12,24 +32,108 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Reusable primitives */
+@layer components {
+  .app-card {
+    @apply rounded-3xl border shadow-sm;
+    border-color: var(--border);
+    background: var(--card);
+    backdrop-filter: blur(8px);
   }
+
+  .app-card-solid {
+    @apply rounded-3xl border shadow-sm;
+    border-color: var(--border);
+    background: var(--card-solid);
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition;
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  .btn-primary:hover {
+    background: var(--accent-hover);
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition;
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid var(--border);
+    color: var(--foreground);
+  }
+  .btn-ghost:hover {
+    background: rgba(255, 255, 255, 0.85);
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold;
+    background: var(--accent-soft);
+    color: var(--accent-soft-ink);
+    border: 1px solid rgba(31, 122, 58, 0.18);
+  }
+}
+
+html {
+  /* Caduceus cursor */
+  cursor: url('/cursors/caduceus-32.png') 4 4, auto;
+}
+
+a,
+button,
+summary,
+[role='button'],
+.cursor-pointer {
+  cursor: url('/cursors/caduceus-32.png') 4 4, pointer;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+
   /* Prevent long text/URLs from breaking layout.
-     Horizontal scrolling should happen inside explicit overflow-x-auto wrappers,
-     so we do NOT globally hide overflow-x (that would clip content). */
+     Horizontal scrolling should happen inside explicit overflow-x-auto wrappers. */
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
-html {
-  /* Keep default overflow behavior */
+::selection {
+  background: var(--accent-soft);
+}
+
+a {
+  color: var(--accent-link);
+}
+
+a:hover {
+  color: var(--accent-link-hover);
+}
+
+/*
+  Legacy emerald styles cleanup.
+  Many older buttons/active states use Tailwind's bg-emerald-600 + text-white.
+  We remap them to the new light-green palette so they stay readable.
+*/
+@layer base {
+  .bg-emerald-600.text-white {
+    background-color: var(--accent) !important;
+    color: var(--accent-ink) !important;
+  }
+
+  .bg-emerald-600.text-white svg {
+    color: var(--accent-ink) !important;
+  }
+
+  .hover\:bg-emerald-700:hover {
+    background-color: var(--accent-hover) !important;
+  }
+
+  /* Some pills use text-green on green-ish backgrounds */
+  .bg-emerald-50.text-emerald-700,
+  .bg-emerald-100.text-emerald-700,
+  .bg-emerald-200.text-emerald-700,
+  .bg-green-50.text-green-700 {
+    color: var(--accent-soft-ink);
+  }
 }

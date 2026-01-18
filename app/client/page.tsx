@@ -196,13 +196,11 @@ function Card({
   action?: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+    <section className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--card)] p-5 shadow-sm backdrop-blur-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-semibold">{title}</div>
-          {subtitle ? (
-            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{subtitle}</div>
-          ) : null}
+          {subtitle ? (<div className="mt-1 text-xs text-slate-500">{subtitle}</div>) : null}
         </div>
         {action ? <div className="shrink-0">{action}</div> : null}
       </div>
@@ -213,7 +211,7 @@ function Card({
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+    <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--card-solid)] px-3 py-1 text-xs text-slate-700">
       {children}
     </span>
   );
@@ -375,7 +373,7 @@ export default function ClientDashboardPage() {
           <div className="flex flex-wrap gap-2">
             <Link
               href="/client/assignments"
-              className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
             >
               Мои назначения
             </Link>
@@ -603,7 +601,7 @@ export default function ClientDashboardPage() {
             <div className="flex flex-wrap gap-2">
               <Link
                 href="/client/specialists"
-                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
               >
                 Чат
               </Link>

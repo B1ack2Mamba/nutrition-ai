@@ -1638,7 +1638,7 @@ export default function ClientDetailPage() {
             onClick={() => setTab(id)}
             className={
                 tab === id
-                    ? "inline-flex items-center gap-2 rounded-xl bg-black px-3 py-2 text-xs font-medium text-white dark:bg-zinc-100 dark:text-black"
+                    ? "inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-medium text-white dark:bg-zinc-100 dark:text-black"
                     : "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-900"
             }
         >
@@ -1689,7 +1689,7 @@ if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">За
                         <span
                             className={
                                 activeAssignment
-                                    ? "rounded-full bg-black px-3 py-1 text-[11px] font-medium text-white dark:bg-zinc-100 dark:text-black"
+                                    ? "rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-medium text-white dark:bg-zinc-100 dark:text-black"
                                     : "rounded-full border border-zinc-300 bg-white px-3 py-1 text-[11px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300"
                             }
                         >
@@ -1716,7 +1716,7 @@ if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">За
 
                     <Link
                         href={`/nutritionist/chat/${basic.id}`}
-                        className="inline-flex items-center justify-center rounded-full bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                        className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
                     >
                         Чат
                     </Link>
@@ -2004,7 +2004,7 @@ if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">За
                                     <div className="min-w-0">
                                         <div className="font-medium">
                                             {activeAssignment.title}
-                                            <span className="ml-2 rounded-full bg-black px-2 py-0.5 text-[10px] font-medium text-white dark:bg-zinc-100 dark:text-black">
+                                            <span className="ml-2 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-medium text-white dark:bg-zinc-100 dark:text-black">
                                                 активный
                                             </span>
                                         </div>
@@ -2074,7 +2074,7 @@ if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">За
                                 type="button"
                                 onClick={saveFoodRules}
                                 disabled={foodSaving || !!foodHint}
-                                className="rounded-full bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                                className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
                                 title={foodHint ? "Нужно настроить таблицу client_food_rules и RLS" : ""}
                             >
                                 {foodSaving ? "Сохраняю..." : "Сохранить"}
@@ -2203,7 +2203,7 @@ if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">За
                                     type="button"
                                     onClick={saveSupplementPlan}
                                     disabled={suppSaving || !!suppHint}
-                                    className="rounded-full bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                                    className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
                                     title={suppHint ? "Нужно настроить таблицу client_supplement_plans и RLS" : ""}
                                 >
                                     {suppSaving ? "Сохраняю..." : "Сохранить"}
@@ -2398,7 +2398,7 @@ if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">За
                             <button
                                 type="submit"
                                 disabled={savingAssign || !selectedMenuId}
-                                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                                className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
                             >
                                 {savingAssign ? "Назначаю..." : "Назначить"}
                             </button>
@@ -2456,7 +2456,7 @@ if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">За
                                                     {a.title}
                                                     {a.days_count ? ` · ${a.days_count} дней` : a.menu_data?.daysCount ? ` · ${a.menu_data.daysCount} дней` : null}
                                                     {isActive ? (
-                                                        <span className="ml-2 rounded-full bg-black px-2 py-0.5 text-[10px] font-medium text-white dark:bg-zinc-100 dark:text-black">
+                                                        <span className="ml-2 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-medium text-white dark:bg-zinc-100 dark:text-black">
                                                             активный
                                                         </span>
                                                     ) : null}
@@ -2533,7 +2533,7 @@ if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">За
                                 onClick={() => setJournalRange(k)}
                                 className={
                                     journalRange === k
-                                        ? "rounded-full bg-black px-3 py-1 text-xs font-medium text-white dark:bg-zinc-100 dark:text-black"
+                                        ? "rounded-full bg-emerald-600 px-3 py-1 text-xs font-medium text-white dark:bg-zinc-100 dark:text-black"
                                         : "rounded-full border border-zinc-300 px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
                                 }
                             >
@@ -2733,7 +2733,7 @@ if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">За
                                                                         [e.id]: String(diaryAiByEntryId[e.id].draft_feedback_for_client || ""),
                                                                     }))
                                                                 }
-                                                                className="rounded-full bg-black px-3 py-1.5 text-[11px] text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                                                                className="rounded-full bg-emerald-600 px-3 py-1.5 text-[11px] text-white hover:bg-emerald-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
                                                                 title="Вставить AI-черновик в заметку нутрициолога"
                                                             >
                                                                 Вставить в заметку
@@ -2818,7 +2818,7 @@ if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">За
                                                         type="button"
                                                         onClick={() => saveDiaryNote(e)}
                                                         disabled={Boolean(diaryNoteSavingByEntryId[e.id])}
-                                                        className="rounded-full bg-black px-3 py-1.5 text-[11px] text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-black"
+                                                        className="rounded-full bg-emerald-600 px-3 py-1.5 text-[11px] text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-black"
                                                     >
                                                         {diaryNoteSavingByEntryId[e.id] ? "Сохраняю…" : "Сохранить"}
                                                     </button>
@@ -3075,7 +3075,7 @@ if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">За
                                     <button
                                         type="button"
                                         disabled={labBusy || !labFile}
-                                        className="rounded-full bg-black px-4 py-2 text-sm text-white disabled:opacity-50"
+                                        className="rounded-full bg-emerald-600 px-4 py-2 text-sm text-white disabled:opacity-50"
                                         onClick={uploadAndAnalyzeNewLabReport}
                                     >
                                         {labBusy ? "Обрабатываю…" : "Загрузить и разобрать"}
@@ -3117,7 +3117,7 @@ if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">За
                                             {r.nutritionist_id ? (
                                                 <span className="ml-2 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-white">специалист</span>
                                             ) : (
-                                                <span className="ml-2 rounded-full bg-black px-2 py-0.5 text-[10px] text-white">клиент</span>
+                                                <span className="ml-2 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] text-white">клиент</span>
                                             )}
                                         </div>
                                         <div className="mt-1 text-[11px] text-zinc-500">
@@ -3147,7 +3147,7 @@ if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">За
                                                     type="button"
                                                     onClick={() => saveLabNote(r)}
                                                     disabled={Boolean(labNoteSavingById[r.id])}
-                                                    className="rounded-full bg-black px-3 py-1.5 text-[11px] text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-black"
+                                                    className="rounded-full bg-emerald-600 px-3 py-1.5 text-[11px] text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-black"
                                                 >
                                                     {labNoteSavingById[r.id] ? "Сохраняю…" : "Сохранить"}
                                                 </button>

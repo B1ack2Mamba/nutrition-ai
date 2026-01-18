@@ -276,7 +276,7 @@ export default function NewMenuPage() {
                     <button
                         type="submit"
                         disabled={saving || dishes.length === 0}
-                        className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                        className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
                     >
                         {saving ? "Сохраняю..." : "Сохранить рацион"}
                     </button>

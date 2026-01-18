@@ -593,7 +593,7 @@ export default function NutritionistProfilePage() {
                                                 <button
                                                     type="button"
                                                     onClick={() => coverInputRef.current?.click()}
-                                                    className="rounded-full bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+                                                    className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
                                                 >
                                                     Загрузить
                                                 </button>
@@ -626,7 +626,7 @@ export default function NutritionistProfilePage() {
                                                 <button
                                                     type="button"
                                                     onClick={() => avatarInputRef.current?.click()}
-                                                    className="rounded-full bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+                                                    className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
                                                 >
                                                     Загрузить
                                                 </button>
@@ -690,7 +690,7 @@ export default function NutritionistProfilePage() {
                                             type="button"
                                             onClick={() => void uploadDoc()}
                                             disabled={!uploadFile || uploading}
-                                            className="shrink-0 rounded-full bg-black px-4 py-2 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
+                                            className="shrink-0 rounded-full bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
                                         >
                                             {uploading ? "..." : "Добавить"}
                                         </button>
@@ -713,7 +713,7 @@ export default function NutritionistProfilePage() {
                                             type="button"
                                             onClick={() => void uploadPortfolio()}
                                             disabled={!portfolioFile || portfolioUploading}
-                                            className="shrink-0 rounded-full bg-black px-4 py-2 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
+                                            className="shrink-0 rounded-full bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
                                         >
                                             {portfolioUploading ? "..." : "Добавить"}
                                         </button>
@@ -776,7 +776,7 @@ export default function NutritionistProfilePage() {
                         <button
                             type="button"
                             onClick={() => setManageOpen(true)}
-                            className="rounded-full bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+                            className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
                             title="Управление"
                         >
                             ⚙ Управление
@@ -864,7 +864,7 @@ export default function NutritionistProfilePage() {
                             type="button"
                             onClick={() => void saveNprof()}
                             disabled={savingNprof}
-                            className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
+                            className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
                         >
                             {savingNprof ? "Сохраняю..." : "Сохранить"}
                         </button>

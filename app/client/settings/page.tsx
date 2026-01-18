@@ -20,7 +20,7 @@ export default function ClientSettingsRedirectPage() {
       </p>
       <Link
         href="/client/profile"
-        className="inline-flex rounded-full bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+        className="inline-flex rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
       >
         Перейти в профиль
       </Link>

@@ -58,7 +58,7 @@ export default function InstallPage() {
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <a
-            className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+            className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
             href="/downloads/nutrition-ai.apk"
           >
             Скачать APK (если доступно)

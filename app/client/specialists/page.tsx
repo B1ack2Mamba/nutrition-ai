@@ -508,7 +508,7 @@ const sendRequest = useCallback(
             <button
               type="button"
               onClick={() => void refresh()}
-              className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
             >
               Обновить
             </button>
@@ -566,7 +566,7 @@ const sendRequest = useCallback(
               type="button"
               onClick={() => void sendRequest()}
               disabled={requestSending || !requestNutId}
-              className="rounded-full bg-black px-5 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+              className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
             >
               {requestSending ? "Отправляю…" : "Отправить заявку"}
             </button>
@@ -663,7 +663,7 @@ const sendRequest = useCallback(
                 {/* действия: основной + чат (чат — отдельным окном) */}
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   {isPrimary ? (
-                    <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-semibold text-white dark:bg-zinc-100 dark:text-black">
+                    <span className="inline-flex items-center rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white dark:bg-zinc-100 dark:text-black">
                       Основной
                     </span>
                   ) : canMakePrimary ? (
@@ -671,7 +671,7 @@ const sendRequest = useCallback(
                       type="button"
                       disabled={savingPrimary === selectedNutId}
                       onClick={() => void setPrimaryNutritionist(selectedNutId)}
-                      className="rounded-full bg-black px-4 py-2 text-xs font-semibold text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                      className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
                     >
                       {savingPrimary === selectedNutId ? "Сохраняю…" : "Сделать основным"}
                     </button>

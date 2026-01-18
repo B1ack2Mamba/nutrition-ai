@@ -192,7 +192,7 @@ export default function ChatRoom(props: Props) {
                     <div
                       className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
                         mine
-                          ? "bg-black text-white dark:bg-zinc-100 dark:text-black"
+                          ? "bg-emerald-600 text-white dark:bg-zinc-100 dark:text-black"
                           : "border border-zinc-200 bg-zinc-50 text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
                       }`}
                     >
@@ -225,7 +225,7 @@ export default function ChatRoom(props: Props) {
             <button
               type="submit"
               disabled={sending || !draft.trim() || !threadId}
-              className="rounded-full bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
             >
               {sending ? "Отправляю…" : "Отправить"}
             </button>

@@ -401,7 +401,7 @@ export default function ClientJournalPage() {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <a
             href="/app/nutrition-client.apk"
-            className="inline-flex rounded-full bg-black px-4 py-2 text-xs font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+            className="inline-flex rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
           >
             Скачать приложение для Android
           </a>
@@ -767,7 +767,7 @@ export default function ClientJournalPage() {
     <button
       type="submit"
       disabled={saving}
-      className="self-start rounded-full bg-black px-5 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+      className="self-start rounded-full bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
     >
       {saving ? "Сохраняю..." : editingId ? "Сохранить изменения" : "Добавить запись"}
     </button>
