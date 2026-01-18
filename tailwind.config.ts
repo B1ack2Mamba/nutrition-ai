@@ -1,7 +1,8 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  darkMode: ["class"],
+  // Tailwind types (v4) expect either "class" or ["class", selector].
+  darkMode: "class",
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -11,16 +12,17 @@ const config: Config = {
     extend: {
       colors: {
         brand: {
-          50: "#e9f6ee",
-          100: "#d7f0df",
-          200: "#b0e1c0",
-          300: "#86d19f",
-          400: "#55bb77",
-          500: "#2fa35a",
-          600: "#1f7a3a",
-          700: "#166534",
-          800: "#125328",
-          900: "#0f4322",
+          // Soft medical-teal palette that sits nicely on beige backgrounds
+          50: "#e6fbf7",
+          100: "#c9f6ee",
+          200: "#9feee0",
+          300: "#6ee2cf",
+          400: "#3ccfb7",
+          500: "#18b89f",
+          600: "#0f8f7c",
+          700: "#0f766e",
+          800: "#115e59",
+          900: "#134e4a",
         },
         beige: {
           50: "#fbf7f0",

@@ -10,16 +10,16 @@
   --border: #e6d9c7;
   --muted: #6b7280;
 
-  /* Brand / accent */
-  --accent: #a7f3d0; /* light green */
-  --accent-hover: #6ee7b7; /* hover */
+  /* Brand / accent (soft medical teal that sits nicer on beige) */
+  --accent: #bfeee6; /* soft aqua */
+  --accent-hover: #a3e6db; /* hover */
   --accent-ink: #0f172a; /* near-black text on accent */
 
-  --accent-link: #166534; /* deep green for links */
-  --accent-link-hover: #14532d;
-  --accent-soft: #e9f6ee;
+  --accent-link: #0f766e; /* deep teal for links */
+  --accent-link-hover: #115e59;
+  --accent-soft: #e6fbf7;
   --accent-soft-ink: #0f172a;
-  --accent-600: #166534;
+  --accent-600: #0f766e;
 
   /* Make sure the app stays light even if OS is dark */
   color-scheme: light;
@@ -70,7 +70,7 @@
     @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold;
     background: var(--accent-soft);
     color: var(--accent-soft-ink);
-    border: 1px solid rgba(31, 122, 58, 0.18);
+    border: 1px solid var(--border);
   }
 }
 
@@ -127,6 +127,32 @@ a:hover {
 
   .hover\:bg-emerald-700:hover {
     background-color: var(--accent-hover) !important;
+  }
+
+  /* Active nav/selection backgrounds */
+  .bg-emerald-200,
+  .bg-emerald-100,
+  .bg-emerald-50,
+  .bg-green-50 {
+    background-color: var(--accent-soft) !important;
+  }
+
+  /* Green/emerald text -> teal accent (but keep it readable) */
+  .text-emerald-600,
+  .text-emerald-700,
+  .text-green-600,
+  .text-green-700,
+  .text-green-800 {
+    color: var(--accent-link) !important;
+  }
+
+  /* Green borders are too loud on beige -> use neutral border */
+  .border-green-300,
+  .border-emerald-200,
+  .border-emerald-300,
+  .border-emerald-600,
+  .dark\:border-green-800 {
+    border-color: var(--border) !important;
   }
 
   /* Some pills use text-green on green-ish backgrounds */
