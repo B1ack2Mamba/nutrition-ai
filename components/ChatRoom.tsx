@@ -13,10 +13,12 @@ import {
 type Props = {
   title: string;
   subtitle?: string;
-  backHref: string;
+  backHref?: string;
   clientId: string;
   nutritionistId: string;
   myUserId: string;
+  embedded?: boolean;
+  hideHeader?: boolean;
 };
 
 function formatTime(iso: string): string {
@@ -28,7 +30,7 @@ function formatTime(iso: string): string {
 }
 
 export default function ChatRoom(props: Props) {
-  const { title, subtitle, backHref, clientId, nutritionistId, myUserId } = props;
+  const { title, subtitle, backHref, clientId, nutritionistId, myUserId, embedded, hideHeader } = props;
 
   const [threadId, setThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -129,28 +131,45 @@ export default function ChatRoom(props: Props) {
 
   return (
     <div className="space-y-4">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-3">
-            <Link
-              href={backHref}
-              className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-            >
-              Назад
-            </Link>
-            <div className="min-w-0">
-              <h1 className="truncate text-2xl font-semibold tracking-tight">{title}</h1>
-              {subtitle ? <p className="text-sm text-zinc-600 dark:text-zinc-400">{subtitle}</p> : null}
-            </div>
+      {hideHeader ? null : embedded ? (
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="truncate text-base font-semibold">{title}</div>
+            {subtitle ? <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">{subtitle}</p> : null}
+          </div>
+
+          <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+            <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 dark:border-zinc-800 dark:bg-zinc-950">
+              {peerLabel} ↔ Вы
+            </span>
           </div>
         </div>
+      ) : (
+        <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3">
+              {backHref ? (
+                <Link
+                  href={backHref}
+                  className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                >
+                  Назад
+                </Link>
+              ) : null}
+              <div className="min-w-0">
+                <h1 className="truncate text-2xl font-semibold tracking-tight">{title}</h1>
+                {subtitle ? <p className="text-sm text-zinc-600 dark:text-zinc-400">{subtitle}</p> : null}
+              </div>
+            </div>
+          </div>
 
-        <div className="text-xs text-zinc-500 dark:text-zinc-400">
-          <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 dark:border-zinc-800 dark:bg-zinc-950">
-            {peerLabel} ↔ Вы
-          </span>
-        </div>
-      </header>
+          <div className="text-xs text-zinc-500 dark:text-zinc-400">
+            <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 dark:border-zinc-800 dark:bg-zinc-950">
+              {peerLabel} ↔ Вы
+            </span>
+          </div>
+        </header>
+      )}
 
       <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
         <div className="max-h-[60vh] overflow-auto p-4">
@@ -159,10 +178,7 @@ export default function ChatRoom(props: Props) {
           ) : err ? (
             <div className="space-y-2">
               <p className="text-sm text-red-500">{err}</p>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Подсказка: для лайв-обновлений включи Realtime для таблицы <code>chat_messages</code> в Supabase.
-              </p>
-            </div>
+</div>
           ) : messages.length === 0 ? (
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
               Пока пусто. Напиши первое сообщение — дальше будет как в нормальном мессенджере.
@@ -214,10 +230,6 @@ export default function ChatRoom(props: Props) {
               {sending ? "Отправляю…" : "Отправить"}
             </button>
           </form>
-
-          <div className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-            Только текст. Файлы/картинки добавим позже, когда решим со storage и политиками.
-          </div>
         </div>
       </section>
     </div>

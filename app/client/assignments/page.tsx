@@ -73,6 +73,32 @@ type SupplementPlanRow = {
     updated_at?: string | null;
 };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function mealLabel(key: string): string {
+    const k = key.toLowerCase();
+    if (k === "breakfast") return "Завтрак";
+    if (k === "lunch") return "Обед";
+    if (k === "dinner") return "Ужин";
+    if (k === "snack" || k === "snacks") return "Перекус";
+    if (k === "supper") return "Ужин";
+    return key;
+}
+
+type DishDb = {
+    id: string;
+    title: string;
+    ingredients: unknown;
+    instructions: string | null;
+    notes: string | null;
+    macros: unknown;
+    time_minutes: number | null;
+    difficulty: string | null;
+    category: string | null;
+    tags: string[] | null;
+    image_url: string | null;
+};
+
 function formatDate(d: string | null | undefined): string {
     if (!d) return "—";
     const dt = new Date(d);
@@ -266,19 +292,38 @@ function normalizeMeals(day: unknown): unknown[] {
 function normalizeDishes(meal: unknown): unknown[] {
     const m = asRecord(meal);
 
+    const primitive = (v: unknown): unknown[] => {
+        if (typeof v === "string") {
+            const t = v.trim();
+            return t ? [t] : [];
+        }
+        if (typeof v === "number" || typeof v === "boolean") return [String(v)];
+        return [];
+    };
+
     const candidates = [m.dishes, m.items, m.recipes, m.recipe, m.meals, m.value, m.products, m.components];
     for (const c of candidates) {
+        const prim = primitive(c);
+        if (prim.length) return prim;
+
         const list = toList(c, { treatRecordAsSingleIfLooksLike: recordLooksLikeDish });
         if (list.length) return list;
     }
 
     // глубже: если кто-то запихнул dishes внутрь nested-объекта
     for (const v of Object.values(m)) {
+        const prim = primitive(v);
+        if (prim.length) return prim;
+
         const list = toList(v, { treatRecordAsSingleIfLooksLike: recordLooksLikeDish });
         if (list.length) return list;
 
         if (isRecord(v)) {
-            const list2 = toList(v.dishes ?? v.items ?? v.recipes ?? v.recipe ?? v.value ?? v.products, {
+            const nested = v.dishes ?? v.items ?? v.recipes ?? v.recipe ?? v.value ?? v.products;
+            const prim2 = primitive(nested);
+            if (prim2.length) return prim2;
+
+            const list2 = toList(nested, {
                 treatRecordAsSingleIfLooksLike: recordLooksLikeDish,
             });
             if (list2.length) return list2;
@@ -340,7 +385,7 @@ function buildMenuView(menu: unknown): DayView[] {
 
     return days.map((day, dayIndex) => {
         const d = asRecord(day);
-        const label = getString(d.day) || getString(d.title) || getString(d.name) || `Day ${dayIndex + 1}`;
+        const label = getString(d.label) || getString(d.day) || getString(d.title) || getString(d.name) || `День ${dayIndex + 1}`;
 
         const meals = normalizeMeals(day)
             .slice(0, 30)
@@ -587,6 +632,74 @@ export default function ClientPage() {
         return menuData ? buildMenuView(menuData) : [];
     }, [menuData]);
 
+    const [dishMap, setDishMap] = useState<Record<string, DishDb>>({});
+    const [dishHint, setDishHint] = useState<string | null>(null);
+
+    const dishIds = useMemo(() => {
+        const ids = new Set<string>();
+        for (const d of menuView) {
+            for (const m of d.meals) {
+                for (const dish of m.dishes) {
+                    if (UUID_RE.test(dish.name)) ids.add(dish.name);
+                }
+            }
+        }
+        return Array.from(ids);
+    }, [menuView]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadDishes = async () => {
+            if (!dishIds.length) {
+                setDishMap({});
+                setDishHint(null);
+                return;
+            }
+
+            try {
+                const map: Record<string, DishDb> = {};
+                const chunkSize = 200;
+                for (let i = 0; i < dishIds.length; i += chunkSize) {
+                    const chunk = dishIds.slice(i, i + chunkSize);
+                    const { data, error } = await supabase
+                        .from("nutritionist_dishes")
+                        .select("id, title, ingredients, instructions, notes, macros, time_minutes, difficulty, category, tags, image_url")
+                        .in("id", chunk);
+
+                    if (error) {
+                        const msg = error.message || "";
+                        // обычно тут RLS/permission denied
+                        setDishHint("Состав блюд недоступен (скорее всего RLS на nutritionist_dishes). Можно показывать только названия/ID из меню.");
+                        if (!cancelled) setDishMap({});
+                        return;
+                    }
+
+                    for (const row of data ?? []) {
+                        const r = row as DishDb;
+                        map[r.id] = r;
+                    }
+                }
+
+                if (!cancelled) {
+                    setDishHint(null);
+                    setDishMap(map);
+                }
+            } catch (e) {
+                if (!cancelled) {
+                    setDishHint("Не удалось загрузить детали блюд.");
+                    setDishMap({});
+                }
+            }
+        };
+
+        loadDishes();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [dishIds.join(",")]);
+
     // ✅ поддержка обоих вариантов колонок
     const allowedTokens = useMemo(
         () => splitList(currentFood?.allowed_products ?? currentFood?.allowed),
@@ -670,6 +783,12 @@ export default function ClientPage() {
                                 <div className="mt-2 text-xs text-zinc-500">В этом назначении нет данных меню.</div>
                             ) : (
                                 <div className="mt-3 max-h-[520px] overflow-auto rounded-xl border border-zinc-200 bg-white p-3">
+                                    {dishHint ? (
+                                        <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                                            {dishHint}
+                                        </div>
+                                    ) : null}
+
                                     <div className="space-y-3">
                                         {menuView.length === 0 ? (
                                             <div className="text-xs text-zinc-500">
@@ -689,45 +808,91 @@ export default function ClientPage() {
                                                                 key={`${meal.name}-${mi}`}
                                                                 className="rounded-lg bg-zinc-50 p-3"
                                                             >
-                                                                <summary className="cursor-pointer text-xs font-semibold">{meal.name}</summary>
+                                                                <summary className="cursor-pointer text-xs font-semibold">{mealLabel(meal.name)}</summary>
 
                                                                 <div className="mt-2 space-y-2">
                                                                     {meal.dishes.length === 0 ? (
                                                                         <div className="text-xs text-zinc-500">Блюда не указаны.</div>
                                                                     ) : (
-                                                                        meal.dishes.map((dish, xi) => (
-                                                                            <div
-                                                                                key={`${dish.name}-${xi}`}
-                                                                                className="rounded-lg border border-zinc-200 bg-white p-3"
-                                                                            >
-                                                                                <div className="text-sm font-semibold">{dish.name}</div>
-                                                                                {dish.details ? (
-                                                                                    <div className="mt-1 text-xs text-zinc-500">{dish.details}</div>
-                                                                                ) : null}
+                                                                        meal.dishes.map((dish, xi) => {
+                                                                                const dishId = UUID_RE.test(dish.name) ? dish.name : null;
+                                                                                const db = dishId ? dishMap[dishId] : undefined;
+                                                                                const title = db?.title || dish.name;
+                                                                                const ing = dish.ingredients?.length
+                                                                                    ? dish.ingredients
+                                                                                    : db
+                                                                                        ? normalizeIngredients(db.ingredients)
+                                                                                        : [];
+                                                                                const steps = dish.steps?.length
+                                                                                    ? dish.steps
+                                                                                    : db
+                                                                                        ? normalizeSteps(db.instructions)
+                                                                                        : [];
+                                                                                const extraDetails: string[] = [];
+                                                                                if (dish.details) extraDetails.push(dish.details);
+                                                                                if (db?.time_minutes) extraDetails.push(`~${db.time_minutes} мин`);
+                                                                                if (db?.difficulty) extraDetails.push(String(db.difficulty));
+                                                                                const detailsLine = extraDetails.filter(Boolean).join(" · ");
 
-                                                                                {dish.ingredients?.length ? (
-                                                                                    <div className="mt-2">
-                                                                                        <div className="text-xs font-semibold text-zinc-700">Ингредиенты</div>
-                                                                                        <ul className="mt-1 list-disc pl-5 text-xs text-zinc-600">
-                                                                                            {dish.ingredients.map((ing) => (
-                                                                                                <li key={ing}>{ing}</li>
-                                                                                            ))}
-                                                                                        </ul>
-                                                                                    </div>
-                                                                                ) : null}
+                                                                                return (
+                                                                                    <div
+                                                                                        key={`${dish.name}-${xi}`}
+                                                                                        className="rounded-lg border border-zinc-200 bg-white p-3"
+                                                                                    >
+                                                                                        <div className="flex items-start justify-between gap-3">
+                                                                                            <div>
+                                                                                                <div className="text-sm font-semibold">{title}</div>
+                                                                                                {detailsLine ? (
+                                                                                                    <div className="mt-1 text-xs text-zinc-500">{detailsLine}</div>
+                                                                                                ) : null}
+                                                                                            </div>
+                                                                                            {dishId && !db ? (
+                                                                                                <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] text-zinc-500">
+                                                                                                    id
+                                                                                                </span>
+                                                                                            ) : null}
+                                                                                        </div>
 
-                                                                                {dish.steps?.length ? (
-                                                                                    <div className="mt-2">
-                                                                                        <div className="text-xs font-semibold text-zinc-700">Приготовление</div>
-                                                                                        <ol className="mt-1 list-decimal pl-5 text-xs text-zinc-600">
-                                                                                            {dish.steps.map((st, si) => (
-                                                                                                <li key={`${si}-${st}`}>{st}</li>
-                                                                                            ))}
-                                                                                        </ol>
+                                                                                        {(ing.length || steps.length) ? (
+                                                                                            <details className="mt-2">
+                                                                                                <summary className="cursor-pointer text-xs font-medium text-zinc-700 underline underline-offset-4">
+                                                                                                    Состав и приготовление
+                                                                                                </summary>
+
+                                                                                                {ing.length ? (
+                                                                                                    <div className="mt-2">
+                                                                                                        <div className="text-xs font-semibold text-zinc-700">Ингредиенты</div>
+                                                                                                        <ul className="mt-1 list-disc pl-5 text-xs text-zinc-600">
+                                                                                                            {ing.map((x) => (
+                                                                                                                <li key={x}>{x}</li>
+                                                                                                            ))}
+                                                                                                        </ul>
+                                                                                                    </div>
+                                                                                                ) : null}
+
+                                                                                                {steps.length ? (
+                                                                                                    <div className="mt-2">
+                                                                                                        <div className="text-xs font-semibold text-zinc-700">Приготовление</div>
+                                                                                                        <ol className="mt-1 list-decimal pl-5 text-xs text-zinc-600">
+                                                                                                            {steps.map((st, si) => (
+                                                                                                                <li key={`${si}-${st}`}>{st}</li>
+                                                                                                            ))}
+                                                                                                        </ol>
+                                                                                                    </div>
+                                                                                                ) : null}
+
+                                                                                                {db?.notes ? (
+                                                                                                    <div className="mt-2 text-xs text-zinc-600">
+                                                                                                        <span className="text-zinc-500">Заметка:</span> {db.notes}
+                                                                                                    </div>
+                                                                                                ) : null}
+                                                                                            </details>
+                                                                                        ) : (
+                                                                                            <div className="mt-2 text-xs text-zinc-500">Детали блюда не указаны.</div>
+                                                                                        )}
                                                                                     </div>
-                                                                                ) : null}
-                                                                            </div>
-                                                                        ))
+                                                                                );
+                                                                            })
                                                                     )}
                                                                 </div>
                                                             </details>

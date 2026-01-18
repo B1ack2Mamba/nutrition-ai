@@ -647,7 +647,7 @@ export default function NutritionistTrainingClientPage() {
                         return (
                           <tr key={pex.id} className="border-t border-zinc-200 dark:border-zinc-800">
                             <td className="py-2 pr-3 font-medium">{pex.name}</td>
-                            <td className="py-2 pr-3">{ex?.done ? "✓" : "✕"}</td>
+                            <td className="py-2 pr-3">{ex?.done ? "✓" : "—"}</td>
                             <td className="py-2 pr-3">{ex?.actual_sets || "—"}</td>
                             <td className="py-2 pr-3">{ex?.actual_reps || "—"}</td>
                             <td className="py-2 pr-3">{ex?.actual_weight || "—"}</td>

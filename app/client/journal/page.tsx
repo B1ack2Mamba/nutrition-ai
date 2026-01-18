@@ -395,8 +395,20 @@ export default function ClientJournalPage() {
       <header>
         <h2 className="text-2xl font-semibold tracking-tight">Дневник питания и самочувствия</h2>
         <p className="break-words text-sm text-zinc-600 dark:text-zinc-400">
-          Одна запись на один день. Формат строк дневника — как в твоём PPTX: время → блюда → количество → причина → ощущения → БАДы/лекарства.
+          Заполняй питание и тренировки по дням — специалист увидит прогресс и сможет точнее корректировать план.
         </p>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <a
+            href="/app/nutrition-client.apk"
+            className="inline-flex rounded-full bg-black px-4 py-2 text-xs font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+          >
+            Скачать приложение для Android
+          </a>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            Если телефон спросит — разреши установку из неизвестных источников.
+          </span>
+        </div>
       </header>
 
       {loading ? <div className="text-sm text-zinc-500">Загружаю…</div> : null}

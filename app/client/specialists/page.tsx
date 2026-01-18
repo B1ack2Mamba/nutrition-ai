@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import ChatRoom from "@/components/ChatRoom";
 
 /* ===================== Types ===================== */
 
@@ -141,6 +142,13 @@ export default function ClientSpecialistsPage() {
   const [portfolio, setPortfolio] = useState<StorageItem[]>([]);
 
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [allNutritionists, setAllNutritionists] = useState<NutritionistBasic[]>([]);
+  const [requestNutId, setRequestNutId] = useState<string>("");
+  const [requestSending, setRequestSending] = useState(false);
+
+  // chat modal (чат только с основным специалистом)
+  const [chatOpen, setChatOpen] = useState(false);
+
 
   const badgeTokens = useMemo(() => splitBadges(nutProfile?.badges), [nutProfile?.badges]);
 
@@ -262,6 +270,19 @@ export default function ClientSpecialistsPage() {
       });
     }
 
+    // Список всех доступных специалистов (для отправки заявки)
+    const allRes = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .eq("role", "nutritionist")
+      .order("full_name", { ascending: true });
+
+    if (!allRes.error) {
+      const all = (allRes.data ?? []) as NutritionistBasic[];
+      setAllNutritionists(all);
+      setRequestNutId((prev) => prev || (all[0]?.id ?? ""));
+    }
+
     setUserId(uid);
     setLinks(rows);
     setPrimaryNutId(savedPrimary);
@@ -290,6 +311,46 @@ export default function ClientSpecialistsPage() {
     setLoading(false);
   }, [loadNutritionistDetails]);
 
+
+const sendRequest = useCallback(
+    async () => {
+      if (!userId) return;
+      if (!requestNutId) {
+        setNotice("Выбери специалиста, кому отправить заявку.");
+        return;
+      }
+      if (links.some((l) => l.status === "pending")) {
+        setNotice("У тебя уже есть заявка со статусом pending. Дождись ответа специалиста.");
+        return;
+      }
+
+      setNotice(null);
+      setRequestSending(true);
+      try {
+        const { error } = await supabase.from("client_nutritionist_links").insert({
+          client_id: userId,
+          nutritionist_id: requestNutId,
+          status: "pending",
+          client_note: null,
+        });
+
+        if (error) {
+          setNotice(`Не получилось отправить заявку: ${error.message}`);
+          return;
+        }
+
+        setNotice("Заявка отправлена.");
+        setLoading(true);
+        await loadInitial();
+      } finally {
+        setRequestSending(false);
+      }
+    },
+    [userId, requestNutId, links, loadInitial]
+  );
+
+  
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -312,11 +373,44 @@ export default function ClientSpecialistsPage() {
     await loadInitial();
   };
 
+  const openChatForSelected = useCallback(() => {
+    if (!userId) return;
+    if (!primaryNutId) {
+      setNotice("Чат появится после того, как ты выберешь основного специалиста.");
+      return;
+    }
+    if (!selectedNutId || selectedNutId !== primaryNutId) {
+      setNotice("Чат доступен только с основным специалистом. Сделай этого специалиста основным — и чат откроется.");
+      return;
+    }
+    setNotice(null);
+    setChatOpen(true);
+  }, [userId, primaryNutId, selectedNutId]);
+
+  useEffect(() => {
+    if (!chatOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setChatOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [chatOpen]);
+
+  useEffect(() => {
+    // если основной специалист пропал/сменился — закрываем чат
+    if (!primaryNutId) setChatOpen(false);
+  }, [primaryNutId]);
+
   if (loading) return <div className="text-sm text-zinc-500 dark:text-zinc-400">Загружаю…</div>;
   if (fatal) return <div className="text-sm text-red-500">{fatal}</div>;
 
   const coverUrl = cover ? publicUrl(BUCKET_BG, cover.path) : null;
   const avatarUrl = avatar ? publicUrl(BUCKET_BG, avatar.path) : null;
+
+  const hasPending = links.some((l) => l.status === "pending");
+  const latestLink = links[0] ?? null;
+  const latestName = latestLink ? nutMap[latestLink.nutritionist_id]?.full_name ?? latestLink.nutritionist_id : null;
+  const primaryName = primaryNutId ? nutMap[primaryNutId]?.full_name ?? primaryNutId : null;
 
   return (
     <div className="space-y-6">
@@ -329,6 +423,52 @@ export default function ClientSpecialistsPage() {
           tabIndex={0}
         >
           <img src={lightboxUrl} alt="preview" className="max-h-[90vh] max-w-[92vw] rounded-xl bg-white" />
+        </div>
+      ) : null}
+
+      {/* chat modal */}
+      {chatOpen && userId && primaryNutId ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setChatOpen(false)}
+        >
+          <div
+            className="w-full max-w-3xl overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold">
+                  {primaryName ? `Чат с ${primaryName}` : "Чат"}
+                </div>
+                <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  Сообщения сохраняются. Закрыть — клавиша Esc.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setChatOpen(false)}
+                className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                aria-label="Закрыть"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4">
+              <ChatRoom
+                hideHeader
+                title={primaryName ? `Чат с ${primaryName}` : "Чат"}
+                clientId={userId}
+                nutritionistId={primaryNutId}
+                myUserId={userId}
+                embedded
+              />
+            </div>
+          </div>
         </div>
       ) : null}
 
@@ -363,6 +503,64 @@ export default function ClientSpecialistsPage() {
           {notice}
         </div>
       ) : null}
+
+      {/* request */}
+      <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold">Заявка нутрициологу</div>
+            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Выбери специалиста и отправь запрос на работу. После подтверждения (approved) можно сделать его основным и открыть чат.
+            </div>
+          </div>
+          <Link
+            href="/client/profile"
+            className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          >
+            Профиль
+          </Link>
+        </div>
+
+        {allNutritionists.length === 0 ? (
+          <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">Пока нет доступных специалистов.</div>
+        ) : hasPending ? (
+          <div className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+            У тебя уже есть заявка со статусом <b>pending</b>. Дождись ответа специалиста.
+          </div>
+        ) : (
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <label className="flex w-full flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
+              Кому отправить
+              <select
+                value={requestNutId}
+                onChange={(e) => setRequestNutId(e.target.value)}
+                className="rounded-xl border border-zinc-300 bg-transparent px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:text-zinc-100 dark:focus:border-zinc-200"
+              >
+                {allNutritionists.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.full_name ?? n.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => void sendRequest()}
+              disabled={requestSending || !requestNutId}
+              className="rounded-full bg-black px-5 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+            >
+              {requestSending ? "Отправляю…" : "Отправить заявку"}
+            </button>
+          </div>
+        )}
+
+        {latestLink ? (
+          <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+            Последний запрос: <b>{latestName ?? "—"}</b> · статус <b>{latestLink.status}</b> · {formatDateTime(latestLink.created_at)}
+          </div>
+        ) : null}
+      </section>
 
       {/* specialists list */}
       <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
@@ -444,45 +642,50 @@ export default function ClientSpecialistsPage() {
                   <div className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{nutProfile.headline}</div>
                 ) : null}
 
-                {/* выбор основного специалиста */}
-                {!canMakePrimary ? (
-                  <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
-                    Чтобы сделать специалиста основным, нужна подтверждённая связь (статус <b>approved</b>). Сейчас: {" "}
-                    <b>{selectedLink?.status ?? "—"}</b>.
-                  </div>
-                ) : (
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {isPrimary ? (
-                      <>
-                        <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-semibold text-white dark:bg-zinc-100 dark:text-black">
-                          Мой основной специалист
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => router.push("/client/chat")}
-                          className="rounded-full border border-zinc-300 px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                        >
-                          Чат
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={savingPrimary === selectedNutId}
-                        onClick={() => void setPrimaryNutritionist(selectedNutId)}
-                        className="rounded-full bg-black px-4 py-2 text-xs font-semibold text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
-                      >
-                        {savingPrimary === selectedNutId ? "Сохраняю…" : "Сделать основным"}
-                      </button>
-                    )}
+                {/* действия: основной + чат (чат — отдельным окном) */}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {isPrimary ? (
+                    <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-semibold text-white dark:bg-zinc-100 dark:text-black">
+                      Основной
+                    </span>
+                  ) : canMakePrimary ? (
+                    <button
+                      type="button"
+                      disabled={savingPrimary === selectedNutId}
+                      onClick={() => void setPrimaryNutritionist(selectedNutId)}
+                      className="rounded-full bg-black px-4 py-2 text-xs font-semibold text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
+                    >
+                      {savingPrimary === selectedNutId ? "Сохраняю…" : "Сделать основным"}
+                    </button>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-semibold text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
+                      Связь: {selectedLink?.status ?? "—"}
+                    </span>
+                  )}
 
-                    {!isPrimary ? (
-                      <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                        Выбранный основной специалист используется по умолчанию в сервисах и чате.
-                      </span>
-                    ) : null}
+                  <button
+                    type="button"
+                    onClick={openChatForSelected}
+                    disabled={!isPrimary}
+                    title={!isPrimary ? "Чат доступен только с основным специалистом" : "Открыть чат"}
+                    className={
+                      "rounded-full border border-zinc-300 px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900 " +
+                      (!isPrimary ? "cursor-not-allowed opacity-50" : "")
+                    }
+                  >
+                    Чат
+                  </button>
+
+                  {!isPrimary ? (
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400">Чат доступен только с основным специалистом.</span>
+                  ) : null}
+                </div>
+
+                {!canMakePrimary ? (
+                  <div className="mt-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+                    Чтобы сделать специалиста основным, нужна подтверждённая связь (статус <b>approved</b>). Сейчас: <b>{selectedLink?.status ?? "—"}</b>.
                   </div>
-                )}
+                ) : null}
 
                 {badgeTokens.length ? (
                   <div className="mt-3 flex flex-wrap gap-2">

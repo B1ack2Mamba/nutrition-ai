@@ -104,7 +104,7 @@ function SidebarContent({
   return (
     <div>
       <h1 className="text-2xl font-semibold tracking-tight">Мой кабинет</h1>
-      <p className="mt-1 text-xs text-zinc-500">Главная · Назначения · Дневник · Чат</p>
+      <p className="mt-1 text-xs text-zinc-500">Главная · Назначения · Дневник · Специалисты</p>
 
       <nav className="mt-6 flex flex-col gap-2">
         {navItems.map((item) => (
@@ -117,10 +117,6 @@ function SidebarContent({
           />
         ))}
       </nav>
-
-      <p className="mt-6 text-xs text-zinc-500">
-        Это режим клиента. Раздел специалиста: <code className="text-[11px]">/nutritionist</code>.
-      </p>
 
       <button
         type="button"
@@ -171,13 +167,10 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
       { href: "/client", label: "Главная" },
       { href: "/client/assignments", label: "Мои назначения" },
       { href: "/client/journal", label: "Дневник" },
-      { href: "/client/analyses", label: "Анализы" },
-      { href: "/client/chat", label: "Чат", badge: chatBadge },
       { href: "/client/profile", label: "Профиль и анкета" },
-      { href: "/client/specialists", label: "Мои специалисты" },
+      { href: "/client/specialists", label: "Мои специалисты", badge: chatBadge },
       { href: "/client/training", label: "Тренировки" },
       { href: "/client/notifications", label: "Уведомления" },
-      { href: "/client/settings", label: "Настройки" },
     ];
   }, [chatUnread, chatUnreadCount]);
 
@@ -328,7 +321,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
           const senderId = msg?.sender_id as string | undefined;
           if (!senderId || senderId === myId) return;
 
-          const chatOpen = pathname === "/client/chat" || pathname.startsWith("/client/chat/");
+          const chatOpen = pathname === "/client/specialists" || pathname.startsWith("/client/specialists") || pathname === "/client/chat" || pathname.startsWith("/client/chat/");
           const visible = typeof document !== "undefined" ? document.visibilityState === "visible" : true;
 
           if (chatOpen && visible) {
@@ -348,7 +341,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
 
   // если пользователь открыл чат — считаем прочитанным
   useEffect(() => {
-    const chatOpen = pathname === "/client/chat" || pathname.startsWith("/client/chat/");
+    const chatOpen = pathname === "/client/specialists" || pathname.startsWith("/client/specialists") || pathname === "/client/chat" || pathname.startsWith("/client/chat/");
     if (!chatOpen) return;
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     markChatRead();
@@ -383,7 +376,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold">Мой кабинет</div>
             <div className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
-              Главная • Назначения • Дневник • Чат
+              Главная • Назначения • Дневник • Специалисты
             </div>
           </div>
 

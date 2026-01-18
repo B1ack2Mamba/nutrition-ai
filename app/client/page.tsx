@@ -565,7 +565,7 @@ export default function ClientDashboardPage() {
           subtitle="Короткий статус"
           action={
             <Link
-              href="/client/analyses"
+              href="/client/profile"
               className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
             >
               Анализы
@@ -602,18 +602,12 @@ export default function ClientDashboardPage() {
 
             <div className="flex flex-wrap gap-2">
               <Link
-                href="/client/chat"
+                href="/client/specialists"
                 className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-200"
               >
                 Чат
               </Link>
-              <Link
-                href="/client/settings"
-                className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
-              >
-                Настройки
-              </Link>
-            </div>
+</div>
           </div>
         </Card>
       </div>

@@ -74,7 +74,7 @@ async function getOrRegisterServiceWorker(): Promise<ServiceWorkerRegistration> 
   try {
     const res = await fetch("/sw.js", { cache: "no-store" });
     if (!res.ok) {
-      throw new Error("Файл /sw.js не найден (проверь public/sw.js).");
+      throw new Error("Сервис уведомлений временно недоступен. Попробуйте ещё раз позже.");
     }
   } catch (e) {
     // Ignore fetch errors here; registration attempt will surface a better error.
@@ -231,15 +231,15 @@ export default function ClientNotificationsPage() {
       return;
     }
     if (!window.isSecureContext) {
-      setError("Push работает только на HTTPS или localhost.");
+      setError("Уведомления работают только на защищённом соединении (HTTPS).");
       return;
     }
     if (!("serviceWorker" in navigator)) {
-      setError("Service Worker недоступен (нужен HTTPS).");
+      setError("Уведомления недоступны: требуется HTTPS.");
       return;
     }
     if (!hasVapid) {
-      setError("Не настроен VAPID ключ (NEXT_PUBLIC_VAPID_PUBLIC_KEY).");
+      setError("Уведомления пока недоступны. Попробуйте позже.");
       return;
     }
 
@@ -276,11 +276,11 @@ export default function ClientNotificationsPage() {
       const normalized = String(msg);
 
       if (normalized.includes("no active Service Worker")) {
-        setError("Нет активного Service Worker. Обнови страницу и попробуй ещё раз (в dev лучше: npm run build && npm run start).");
+        setError("Не удалось активировать сервис уведомлений. Обнови страницу и попробуй ещё раз.");
         return;
       }
       if (normalized.includes("push service error")) {
-        setError("Подписка не создалась: браузер не смог связаться с push-сервисом. Часто виноваты Brave/усиленная приватность, корпоративная сеть/прокси или блокировка Google Push. Попробуй Chrome/Edge без инкогнито, отключи блокировщики, проверь доступ к fcm.googleapis.com или включи VPN/другой интернет.");
+        setError("Не удалось подключить push‑сервис. Часто виноваты блокировщики/усиленная приватность или корпоративная сеть. Попробуй Chrome/Edge, отключи блокировщики и проверь другой интернет/VPN.");
         return;
       }
 
