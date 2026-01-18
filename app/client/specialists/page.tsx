@@ -319,20 +319,38 @@ const sendRequest = useCallback(
         setNotice("Выбери специалиста, кому отправить заявку.");
         return;
       }
-      if (links.some((l) => l.status === "pending")) {
-        setNotice("У тебя уже есть заявка со статусом pending. Дождись ответа специалиста.");
+
+      // 1) Не плодим дубли. Если уже есть pending/approved с этим же специалистом — не создаём новую запись.
+      const existingSame = links.find(
+        (l) =>
+          l.nutritionist_id === requestNutId &&
+          ["pending", "approved", "active", "ok"].includes((l.status ?? "").toLowerCase())
+      );
+      if (existingSame) {
+        const s = (existingSame.status ?? "").toLowerCase();
+        setNotice(s === "pending" ? "Заявка этому специалисту уже отправлена. Дождись ответа." : "Этот специалист уже подключён.");
         return;
       }
+
+      // 2) Если ранее был rejected — обновим старую запись, вместо создания новой.
+      const rejectedSame = links.find(
+        (l) => l.nutritionist_id === requestNutId && (l.status ?? "").toLowerCase() === "rejected"
+      );
 
       setNotice(null);
       setRequestSending(true);
       try {
-        const { error } = await supabase.from("client_nutritionist_links").insert({
-          client_id: userId,
-          nutritionist_id: requestNutId,
-          status: "pending",
-          client_note: null,
-        });
+        const { error } = rejectedSame
+          ? await supabase
+              .from("client_nutritionist_links")
+              .update({ status: "pending", client_note: null })
+              .eq("id", rejectedSame.id)
+          : await supabase.from("client_nutritionist_links").insert({
+              client_id: userId,
+              nutritionist_id: requestNutId,
+              status: "pending",
+              client_note: null,
+            });
 
         if (error) {
           setNotice(`Не получилось отправить заявку: ${error.message}`);

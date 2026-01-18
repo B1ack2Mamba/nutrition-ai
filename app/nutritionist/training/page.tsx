@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -26,11 +26,18 @@ export default function NutritionistTrainingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Next.js dev (React Strict Mode) иногда запускает эффект дважды —
+  // чтобы не делать лишние запросы к Supabase, ставим одноразовый флаг.
+  const didLoadRef = useRef(false);
+
   const [links, setLinks] = useState<LinkRow[]>([]);
   const [profiles, setProfiles] = useState<Record<string, BasicProfile>>({});
   const [clientProfiles, setClientProfiles] = useState<Record<string, ClientProfile>>({});
 
   useEffect(() => {
+    if (didLoadRef.current) return;
+    didLoadRef.current = true;
+
     const load = async () => {
       setLoading(true);
       setError(null);
@@ -97,15 +104,28 @@ export default function NutritionistTrainingPage() {
       setLoading(false);
     };
 
-    load();
+    void load();
   }, []);
 
+  // Берём только самый свежий линк на каждого клиента (links уже отсортированы по created_at desc).
+  const latestPerClient = useMemo(() => {
+    const seen = new Set<string>();
+    const out: LinkRow[] = [];
+    for (const l of links) {
+      if (!l.client_id) continue;
+      if (seen.has(l.client_id)) continue;
+      seen.add(l.client_id);
+      out.push(l);
+    }
+    return out;
+  }, [links]);
+
   const approvedLinks = useMemo(() => {
-    return links.filter((l) => {
+    return latestPerClient.filter((l) => {
       const s = (l.status ?? "approved").toLowerCase();
       return s === "approved" || s === "active" || s === "ok";
     });
-  }, [links]);
+  }, [latestPerClient]);
 
   return (
     <div className="space-y-6">
@@ -130,7 +150,7 @@ export default function NutritionistTrainingPage() {
               const cp = clientProfiles[l.client_id];
               return (
                   <Link
-                  key={l.id}
+                  key={l.client_id}
                   href={`/nutritionist/training/${l.client_id}`}
                   className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-4 text-sm hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
                 >
